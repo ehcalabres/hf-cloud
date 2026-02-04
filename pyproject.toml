@@ -34,10 +34,13 @@ sagemaker = [
 ]
 azure = []
 
-gcp = []
+vertex = [
+    "google-cloud-aiplatform>=1.135.0",
+    "google-cloud-logging>=3.0.0",
+]
 
 all = [
-    "hf-cloud[sagemaker,azure,gcp]",
+    "hf-cloud[sagemaker,azure,vertex]",
 ]
 
 [tool.ruff]

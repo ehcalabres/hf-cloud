@@ -6,27 +6,10 @@ from typing import TYPE_CHECKING, Any
 
 from huggingface_hub import model_info
 
-from ...core.exceptions import ProviderError
+from hf_cloud.core.exceptions import ProviderError
 
 if TYPE_CHECKING:
     from sagemaker.serve.model_builder import SchemaBuilder
-
-
-def get_model_task(model_id: str, token: str | None = None) -> str:
-    """Get the pipeline task for a HuggingFace model.
-
-    Args:
-        model_id: HuggingFace model ID
-        token: Optional HuggingFace token
-
-    Returns:
-        Pipeline task (e.g., 'text-generation', 'text-classification')
-    """
-    try:
-        info = model_info(model_id, token=token)
-        return info.pipeline_tag or "text-generation"
-    except Exception:
-        return "text-generation"
 
 
 def get_schema_builder_from_model(model_id: str, task: str) -> "SchemaBuilder":
@@ -124,12 +107,13 @@ def get_sagemaker_endpoint_name(model_id: str) -> str:
     return sanitize_endpoint_name(name)
 
 
-def get_sagemaker_env_vars(model_id: str, token: str | None = None) -> dict[str, str]:
+def get_sagemaker_env_vars(model_id: str, token: str | None = None, task: str | None = None) -> dict[str, str]:
     """Get environment variables for SageMaker deployment.
 
     Args:
         model_id: HuggingFace model ID
         token: Optional HuggingFace token
+        task: Optional task type
 
     Returns:
         Environment variables dictionary
@@ -140,6 +124,9 @@ def get_sagemaker_env_vars(model_id: str, token: str | None = None) -> dict[str,
 
     if token:
         env_vars["HF_TOKEN"] = token
+
+    if task:
+        env_vars["HF_TASK"] = task
 
     return env_vars
 

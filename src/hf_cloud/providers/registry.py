@@ -2,7 +2,7 @@
 
 from typing import TYPE_CHECKING
 
-from ..core.exceptions import ProviderNotFoundError
+from hf_cloud.core.exceptions import ProviderNotFoundError
 
 if TYPE_CHECKING:
     from .base import CloudProvider
@@ -12,7 +12,7 @@ class ProviderRegistry:
     """Central registry for cloud providers."""
 
     _providers: dict[str, "CloudProvider"] = {}
-    _available_providers: set[str] = {"sagemaker", "azure", "gcp"}
+    _available_providers: set[str] = {"sagemaker", "azure", "vertex"}
 
     @classmethod
     def register_provider(cls, name: str, provider: "CloudProvider") -> None:
@@ -95,11 +95,13 @@ class ProviderRegistry:
                 cls._providers[name] = AzureProvider()
             except ImportError as e:
                 raise ProviderNotFoundError(name) from e
-        elif name == "gcp":
+        elif name == "vertex":
             try:
-                from .gcp import GCPProvider
+                from .vertex import VertexProvider
 
-                cls._providers[name] = GCPProvider()
+                provider = VertexProvider()
+                # Register under both names for convenience
+                cls._providers["vertex"] = provider
             except ImportError as e:
                 raise ProviderNotFoundError(name) from e
         else:

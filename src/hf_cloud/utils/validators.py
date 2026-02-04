@@ -3,7 +3,7 @@
 import re
 from typing import Tuple
 
-from ..core.exceptions import ConfigurationError
+from hf_cloud.core.exceptions import ConfigurationError
 
 
 def validate_model_id(model_id: str) -> Tuple[bool, str]:
@@ -82,10 +82,10 @@ def validate_deployment_name(name: str, provider: str = "sagemaker") -> Tuple[bo
                 "Deployment name must be lowercase, start and end with alphanumeric",
             )
 
-    elif provider == "gcp":
-        # GCP Vertex AI: 1-63 chars, lowercase alphanumeric and hyphens
+    elif provider == "vertex":
+        # vertex Vertex AI: 1-63 chars, lowercase alphanumeric and hyphens
         if len(name) > 63:
-            return False, "Deployment name too long (max 63 characters for GCP)"
+            return False, "Deployment name too long (max 63 characters for vertex)"
 
         if not re.match(r"^[a-z]([a-z0-9-]*[a-z0-9])?$", name):
             return (
@@ -141,8 +141,8 @@ def validate_instance_type(instance_type: str, provider: str = "sagemaker") -> T
         if not instance_type.startswith("Standard_"):
             return False, "Azure VM size must start with 'Standard_'"
 
-    elif provider == "gcp":
-        # GCP machine types
+    elif provider == "vertex":
+        # vertex machine types
         valid_patterns = [
             r"^n1-",
             r"^n2-",
@@ -153,7 +153,7 @@ def validate_instance_type(instance_type: str, provider: str = "sagemaker") -> T
         ]
 
         if not any(re.match(pattern, instance_type) for pattern in valid_patterns):
-            return False, "Invalid GCP machine type"
+            return False, "Invalid vertex machine type"
 
     return True, ""
 
@@ -200,7 +200,7 @@ def validate_region(region: str, provider: str = "sagemaker") -> Tuple[bool, str
         if not re.match(r"^[a-z]+[0-9]?$", region):
             return False, "Invalid Azure region format"
 
-    elif provider == "gcp":
+    elif provider == "vertex":
         # GCP regions
         if not re.match(r"^[a-z]+-[a-z]+[0-9]$", region):
             return False, "Invalid GCP region format (e.g., 'us-central1')"

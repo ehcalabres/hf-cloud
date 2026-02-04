@@ -17,6 +17,9 @@ pip install -e .
 # Install with SageMaker support
 pip install -e ".[sagemaker]"
 
+# Install with Vertex AI support
+pip install -e ".[vertex]"
+
 # Install with all providers
 pip install -e ".[all]"
 
@@ -86,8 +89,61 @@ hf-cloud sagemaker delete my-gpt2-endpoint
 ## Supported Providers
 
 - **AWS SageMaker** - Fully implemented
+- **Google Cloud Vertex AI** - Fully implemented
 - **Azure ML** - Work in progress
-- **Google Cloud Vertex AI** - Work in progress
+
+## Provider-Specific Examples
+
+### AWS SageMaker
+
+```bash
+# Configure (optional)
+hf-cloud providers configure sagemaker
+
+# Deploy
+hf-cloud sagemaker deploy gpt2 \
+  --name my-gpt2-endpoint \
+  --instance-type ml.g5.xlarge \
+  --region us-east-1
+
+# Check status
+hf-cloud sagemaker status my-gpt2-endpoint
+
+# Invoke
+hf-cloud sagemaker invoke my-gpt2-endpoint --input "Hello world"
+
+# Delete
+hf-cloud sagemaker delete my-gpt2-endpoint
+```
+
+### Google Cloud Vertex AI
+
+```bash
+# Configure (optional)
+hf-cloud providers configure vertex
+
+# Deploy
+hf-cloud vertex deploy gpt2 \
+  --name my-gpt2-endpoint \
+  --machine-type n1-standard-4 \
+  --location us-central1
+
+# Deploy with GPU
+hf-cloud vertex deploy meta-llama/Llama-2-7b-hf \
+  --name my-llama-endpoint \
+  --machine-type n1-standard-8 \
+  --accelerator-type NVIDIA_TESLA_T4 \
+  --accelerator-count 1
+
+# Check status
+hf-cloud vertex status my-gpt2-endpoint
+
+# Invoke
+hf-cloud vertex invoke my-gpt2-endpoint --input "Hello world"
+
+# Delete
+hf-cloud vertex delete my-gpt2-endpoint
+```
 
 ## Requirements
 

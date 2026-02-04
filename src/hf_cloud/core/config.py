@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from .exceptions import ConfigurationError
+from hf_cloud.core.exceptions import ConfigurationError
 
 
 class Config:
@@ -51,7 +51,7 @@ class Config:
         """Get configuration for a specific provider.
 
         Args:
-            provider: Provider name (e.g., 'sagemaker', 'azure', 'gcp')
+            provider: Provider name (e.g., 'sagemaker', 'azure', 'vertex')
 
         Returns:
             Provider configuration dictionary

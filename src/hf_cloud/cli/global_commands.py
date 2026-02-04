@@ -6,9 +6,9 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from ..core.config import Config
-from ..core.state import StateManager
-from ..providers.registry import ProviderRegistry
+from hf_cloud.core.config import Config
+from hf_cloud.core.state import StateManager
+from hf_cloud.providers.registry import ProviderRegistry
 
 console = Console()
 
@@ -16,7 +16,7 @@ console = Console()
 def list_all_deployments(
     provider: Annotated[
         Optional[str],
-        typer.Option("--provider", "-p", help="Filter by provider (sagemaker, azure, gcp)"),
+        typer.Option("--provider", "-p", help="Filter by provider (sagemaker, azure, vertex)"),
     ] = None,
     status: Annotated[
         Optional[str],
@@ -116,7 +116,7 @@ def list_providers() -> None:
 
 @providers_app.command(name="configure")
 def configure_provider(
-    provider: Annotated[str, typer.Argument(help="Provider name (sagemaker, azure, gcp)")],
+    provider: Annotated[str, typer.Argument(help="Provider name (sagemaker, azure, vertex)")],
 ) -> None:
     """Configure credentials and defaults for a provider."""
     if provider not in ProviderRegistry.list_providers():
@@ -180,24 +180,29 @@ def configure_provider(
             },
         )
 
-    elif provider == "gcp":
-        # GCP configuration
+    elif provider == "vertex" or provider == "vertex":
+        # vertex/Vertex AI configuration
         project_id = typer.prompt(
-            "GCP Project ID",
-            default=current_config.get("project_id", ""),
+            "vertex Project ID",
+            default=current_config.get("default_project", ""),
         )
-        default_region = typer.prompt(
-            "Default region",
-            default=current_config.get("default_region", "us-central1"),
+        default_location = typer.prompt(
+            "Default location/region",
+            default=current_config.get("default_location", "us-central1"),
+        )
+        default_machine_type = typer.prompt(
+            "Default machine type (optional, press Enter to skip)",
+            default=current_config.get("default_machine_type", ""),
         )
 
-        config.set_provider_config(
-            provider,
-            {
-                "project_id": project_id,
-                "default_region": default_region,
-            },
-        )
+        new_config = {
+            "default_project": project_id,
+            "default_location": default_location,
+        }
+        if default_machine_type:
+            new_config["default_machine_type"] = default_machine_type
+
+        config.set_provider_config("vertex", new_config)
 
     console.print()
     console.print(f"[bold green]✓[/bold green] Configuration saved for {provider}")

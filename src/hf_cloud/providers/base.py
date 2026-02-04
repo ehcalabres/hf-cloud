@@ -3,7 +3,7 @@
 from abc import ABC, abstractmethod
 from typing import Any
 
-from ..core.deployment import Deployment, DeploymentStatus
+from hf_cloud.core.deployment import Deployment, DeploymentStatus
 
 
 class CloudProvider(ABC):
@@ -11,7 +11,7 @@ class CloudProvider(ABC):
 
     @abstractmethod
     def get_provider_name(self) -> str:
-        """Return the provider name (e.g., 'sagemaker', 'azure', 'gcp')."""
+        """Return the provider name (e.g., 'sagemaker', 'azure', 'vertex')."""
         pass
 
     @abstractmethod

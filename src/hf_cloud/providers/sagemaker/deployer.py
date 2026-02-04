@@ -5,16 +5,16 @@ from typing import Any
 
 from rich.console import Console
 
-from ...core.deployment import Deployment, DeploymentStatus
-from ...core.exceptions import DeploymentError
-from .client import SageMakerClient
-from .utils import (
-    get_model_task,
+from hf_cloud.core.deployment import Deployment, DeploymentStatus
+from hf_cloud.core.exceptions import DeploymentError
+from hf_cloud.providers.sagemaker.client import SageMakerClient
+from hf_cloud.providers.sagemaker.utils import (
     get_sagemaker_endpoint_name,
     get_sagemaker_env_vars,
     get_schema_builder_from_model,
     sanitize_endpoint_name,
 )
+from hf_cloud.utils.hf_hub import get_model_task
 
 console = Console()
 
@@ -99,7 +99,7 @@ class SageMakerDeployer:
                 sagemaker_session=session,
                 instance_type=instance_type,
                 schema_builder=schema_builder,
-                env_vars=get_sagemaker_env_vars(model_id=model_id, token=token),
+                env_vars=get_sagemaker_env_vars(model_id=model_id, token=token, task=task),
             )
 
             # Build the model
