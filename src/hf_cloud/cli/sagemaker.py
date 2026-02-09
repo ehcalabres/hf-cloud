@@ -1,5 +1,6 @@
 """AWS SageMaker CLI commands."""
 
+from contextlib import nullcontext
 from typing import Annotated, Optional
 
 import typer
@@ -310,12 +311,15 @@ def estimate(
         typer.Option("--safety-margin", "-s", help="Fraction of VRAM to keep free (e.g., 0.1 for 10%)"),
     ] = None,
     show_all: Annotated[bool, typer.Option("--all", "-a", help="Show all compatible instances")] = False,
+    json_output: Annotated[bool, typer.Option("--json", "-j", help="Output results as JSON")] = False,
 ) -> None:
     """Estimate the minimum viable SageMaker instance for a model.
 
     Uses hf-mem to calculate VRAM requirements and matches against
     available SageMaker instance types.
     """
+    import json
+
     from ..utils.hf_mem import (
         HfMemError,
         _get_total_vram,
@@ -325,21 +329,38 @@ def estimate(
         run_hf_mem,
     )
 
+    def _build_instance_output(inst: dict, required_vram: float) -> dict:
+        """Build output dict for an instance."""
+        total_vram = _get_total_vram(inst)
+        usage_pct = (required_vram / total_vram) * 100 if total_vram > 0 else 0
+        vram_left = total_vram - required_vram
+        return {
+            "instanceType": inst.get("instanceType"),
+            "numGpu": inst.get("numGpu"),
+            "gpuMemGbPerGpu": inst.get("gpuMemGbPerGpu"),
+            "totalVramGb": total_vram,
+            "usagePercent": round(usage_pct, 1),
+            "vramLeftGb": round(vram_left, 1),
+            "pricePerHourUsd": inst.get("pricePerHourUsd"),
+        }
+
     try:
-        console.print(f"[bold blue]Estimating instance for {model_id}...[/bold blue]")
+        if not json_output:
+            console.print(f"[bold blue]Estimating instance for {model_id}...[/bold blue]")
 
         # Run hf-mem estimation
-        with console.status("Running hf-mem estimation..."):
+        with console.status("Running hf-mem estimation...") if not json_output else nullcontext():
             estimate_result = run_hf_mem(model_id)
 
         # Load instance data
         instance_data = load_instance_data("sagemaker")
         effective_margin = safety_margin if safety_margin is not None else instance_data.safety_margin_default
 
-        console.print(f"  [cyan]Model:[/cyan] {model_id}")
-        console.print(f"  [cyan]Required VRAM:[/cyan] {estimate_result.required_vram_gb:.2f} GB")
-        console.print(f"  [cyan]Safety margin:[/cyan] {int(effective_margin * 100)}%")
-        console.print()
+        if not json_output:
+            console.print(f"  [cyan]Model:[/cyan] {model_id}")
+            console.print(f"  [cyan]Required VRAM:[/cyan] {estimate_result.required_vram_gb:.2f} GB")
+            console.print(f"  [cyan]Safety margin:[/cyan] {int(effective_margin * 100)}%")
+            console.print()
 
         if show_all:
             # Show all compatible instances
@@ -348,33 +369,48 @@ def estimate(
             )
 
             if not compatible:
-                console.print("[bold red]No compatible instances found.[/bold red]")
+                if json_output:
+                    print(json.dumps({"error": "No compatible instances found", "instances": []}))
+                else:
+                    console.print("[bold red]No compatible instances found.[/bold red]")
                 raise typer.Exit(code=1)
 
-            table = Table(title="Compatible SageMaker Instances")
-            table.add_column("Instance Type", style="cyan")
-            table.add_column("GPUs", justify="right")
-            table.add_column("GPU Mem (GB)", justify="right")
-            table.add_column("Total VRAM (GB)", justify="right")
-            table.add_column("Usage %", justify="right")
-            table.add_column("VRAM Left (GB)", justify="right")
-            table.add_column("Price/Hour", justify="right")
+            if json_output:
+                output = {
+                    "modelId": model_id,
+                    "requiredVramGb": round(estimate_result.required_vram_gb, 2),
+                    "safetyMargin": effective_margin,
+                    "instances": [
+                        _build_instance_output(inst, estimate_result.required_vram_gb)
+                        for inst in compatible
+                    ],
+                }
+                print(json.dumps(output, indent=2))
+            else:
+                table = Table(title="Compatible SageMaker Instances")
+                table.add_column("Instance Type", style="cyan")
+                table.add_column("GPUs", justify="right")
+                table.add_column("GPU Mem (GB)", justify="right")
+                table.add_column("Total VRAM (GB)", justify="right")
+                table.add_column("Usage %", justify="right")
+                table.add_column("VRAM Left (GB)", justify="right")
+                table.add_column("Price/Hour", justify="right")
 
-            for inst in compatible:
-                total_vram = _get_total_vram(inst)
-                usage_pct = (estimate_result.required_vram_gb / total_vram) * 100 if total_vram > 0 else 0
-                vram_left = total_vram - estimate_result.required_vram_gb
-                table.add_row(
-                    inst.get("instanceType", "N/A"),
-                    str(inst.get("numGpu", "N/A")),
-                    str(inst.get("gpuMemGbPerGpu", "N/A")),
-                    f"{total_vram:.0f}",
-                    f"{usage_pct:.1f}%",
-                    f"{vram_left:.1f}",
-                    f"${inst.get('pricePerHourUsd', 0):.2f}",
-                )
+                for inst in compatible:
+                    total_vram = _get_total_vram(inst)
+                    usage_pct = (estimate_result.required_vram_gb / total_vram) * 100 if total_vram > 0 else 0
+                    vram_left = total_vram - estimate_result.required_vram_gb
+                    table.add_row(
+                        inst.get("instanceType", "N/A"),
+                        str(inst.get("numGpu", "N/A")),
+                        str(inst.get("gpuMemGbPerGpu", "N/A")),
+                        f"{total_vram:.0f}",
+                        f"{usage_pct:.1f}%",
+                        f"{vram_left:.1f}",
+                        f"${inst.get('pricePerHourUsd', 0):.2f}",
+                    )
 
-            console.print(table)
+                console.print(table)
         else:
             # Show only minimum instance
             minimum = find_minimum_instance(
@@ -382,30 +418,45 @@ def estimate(
             )
 
             if minimum is None:
-                console.print("[bold red]No suitable instance found.[/bold red]")
-                console.print("[dim]Model requires more VRAM than any available instance.[/dim]")
+                if json_output:
+                    print(json.dumps({"error": "No suitable instance found", "instance": None}))
+                else:
+                    console.print("[bold red]No suitable instance found.[/bold red]")
+                    console.print("[dim]Model requires more VRAM than any available instance.[/dim]")
                 raise typer.Exit(code=1)
 
-            total_vram = _get_total_vram(minimum)
-            usage_pct = (estimate_result.required_vram_gb / total_vram) * 100 if total_vram > 0 else 0
-            vram_left = total_vram - estimate_result.required_vram_gb
-            console.print("[bold green]Recommended Instance:[/bold green]")
-            console.print(f"  [cyan]Instance Type:[/cyan] {minimum.get('instanceType')}")
-            console.print(
-                f"  [cyan]GPUs:[/cyan] {minimum.get('numGpu')}x {minimum.get('gpuMemGbPerGpu')} GB"
-            )
-            console.print(f"  [cyan]Total VRAM:[/cyan] {total_vram:.0f} GB")
-            console.print(f"  [cyan]Usage:[/cyan] {usage_pct:.1f}% ({vram_left:.1f} GB left)")
-            console.print(f"  [cyan]Price/Hour:[/cyan] ${minimum.get('pricePerHourUsd', 0):.2f}")
-            console.print()
-            console.print("[dim]Deploy with:[/dim]")
-            console.print(
-                f"[dim]  hf-cloud sagemaker deploy {model_id} --name <name> "
-                f"--instance-type {minimum.get('instanceType')}[/dim]"
-            )
+            if json_output:
+                output = {
+                    "modelId": model_id,
+                    "requiredVramGb": round(estimate_result.required_vram_gb, 2),
+                    "safetyMargin": effective_margin,
+                    "instance": _build_instance_output(minimum, estimate_result.required_vram_gb),
+                }
+                print(json.dumps(output, indent=2))
+            else:
+                total_vram = _get_total_vram(minimum)
+                usage_pct = (estimate_result.required_vram_gb / total_vram) * 100 if total_vram > 0 else 0
+                vram_left = total_vram - estimate_result.required_vram_gb
+                console.print("[bold green]Recommended Instance:[/bold green]")
+                console.print(f"  [cyan]Instance Type:[/cyan] {minimum.get('instanceType')}")
+                console.print(
+                    f"  [cyan]GPUs:[/cyan] {minimum.get('numGpu')}x {minimum.get('gpuMemGbPerGpu')} GB"
+                )
+                console.print(f"  [cyan]Total VRAM:[/cyan] {total_vram:.0f} GB")
+                console.print(f"  [cyan]Usage:[/cyan] {usage_pct:.1f}% ({vram_left:.1f} GB left)")
+                console.print(f"  [cyan]Price/Hour:[/cyan] ${minimum.get('pricePerHourUsd', 0):.2f}")
+                console.print()
+                console.print("[dim]Deploy with:[/dim]")
+                console.print(
+                    f"[dim]  hf-cloud sagemaker deploy {model_id} --name <name> "
+                    f"--instance-type {minimum.get('instanceType')}[/dim]"
+                )
 
     except HfMemError as e:
-        console.print(f"[bold red]Error:[/bold red] {e.message}")
-        if e.details:
-            console.print(f"[dim]{e.details}[/dim]")
+        if json_output:
+            print(json.dumps({"error": e.message, "details": e.details}))
+        else:
+            console.print(f"[bold red]Error:[/bold red] {e.message}")
+            if e.details:
+                console.print(f"[dim]{e.details}[/dim]")
         raise typer.Exit(code=1)
