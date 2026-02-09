@@ -298,3 +298,114 @@ def invoke(
     except ProviderError as e:
         console.print(f"[bold red]Error:[/bold red] {e}")
         raise typer.Exit(code=1)
+
+
+@sagemaker_app.command(name="estimate")
+def estimate(
+    model_id: Annotated[
+        str, typer.Argument(help="HuggingFace model ID (e.g., 'gpt2', 'meta-llama/Llama-2-7b-hf')")
+    ],
+    safety_margin: Annotated[
+        Optional[float],
+        typer.Option("--safety-margin", "-s", help="Fraction of VRAM to keep free (e.g., 0.1 for 10%)"),
+    ] = None,
+    show_all: Annotated[bool, typer.Option("--all", "-a", help="Show all compatible instances")] = False,
+) -> None:
+    """Estimate the minimum viable SageMaker instance for a model.
+
+    Uses hf-mem to calculate VRAM requirements and matches against
+    available SageMaker instance types.
+    """
+    from ..utils.hf_mem import (
+        HfMemError,
+        _get_total_vram,
+        find_compatible_instances,
+        find_minimum_instance,
+        load_instance_data,
+        run_hf_mem,
+    )
+
+    try:
+        console.print(f"[bold blue]Estimating instance for {model_id}...[/bold blue]")
+
+        # Run hf-mem estimation
+        with console.status("Running hf-mem estimation..."):
+            estimate_result = run_hf_mem(model_id)
+
+        # Load instance data
+        instance_data = load_instance_data("sagemaker")
+        effective_margin = safety_margin if safety_margin is not None else instance_data.safety_margin_default
+
+        console.print(f"  [cyan]Model:[/cyan] {model_id}")
+        console.print(f"  [cyan]Required VRAM:[/cyan] {estimate_result.required_vram_gb:.2f} GB")
+        console.print(f"  [cyan]Safety margin:[/cyan] {int(effective_margin * 100)}%")
+        console.print()
+
+        if show_all:
+            # Show all compatible instances
+            compatible = find_compatible_instances(
+                estimate_result.required_vram_gb, instance_data.instances, effective_margin
+            )
+
+            if not compatible:
+                console.print("[bold red]No compatible instances found.[/bold red]")
+                raise typer.Exit(code=1)
+
+            table = Table(title="Compatible SageMaker Instances")
+            table.add_column("Instance Type", style="cyan")
+            table.add_column("GPUs", justify="right")
+            table.add_column("GPU Mem (GB)", justify="right")
+            table.add_column("Total VRAM (GB)", justify="right")
+            table.add_column("Usage %", justify="right")
+            table.add_column("VRAM Left (GB)", justify="right")
+            table.add_column("Price/Hour", justify="right")
+
+            for inst in compatible:
+                total_vram = _get_total_vram(inst)
+                usage_pct = (estimate_result.required_vram_gb / total_vram) * 100 if total_vram > 0 else 0
+                vram_left = total_vram - estimate_result.required_vram_gb
+                table.add_row(
+                    inst.get("instanceType", "N/A"),
+                    str(inst.get("numGpu", "N/A")),
+                    str(inst.get("gpuMemGbPerGpu", "N/A")),
+                    f"{total_vram:.0f}",
+                    f"{usage_pct:.1f}%",
+                    f"{vram_left:.1f}",
+                    f"${inst.get('pricePerHourUsd', 0):.2f}",
+                )
+
+            console.print(table)
+        else:
+            # Show only minimum instance
+            minimum = find_minimum_instance(
+                estimate_result.required_vram_gb, instance_data.instances, effective_margin
+            )
+
+            if minimum is None:
+                console.print("[bold red]No suitable instance found.[/bold red]")
+                console.print("[dim]Model requires more VRAM than any available instance.[/dim]")
+                raise typer.Exit(code=1)
+
+            total_vram = _get_total_vram(minimum)
+            usage_pct = (estimate_result.required_vram_gb / total_vram) * 100 if total_vram > 0 else 0
+            vram_left = total_vram - estimate_result.required_vram_gb
+            console.print("[bold green]Recommended Instance:[/bold green]")
+            console.print(f"  [cyan]Instance Type:[/cyan] {minimum.get('instanceType')}")
+            console.print(
+                f"  [cyan]GPUs:[/cyan] {minimum.get('numGpu')}x {minimum.get('gpuMemGbPerGpu')} GB"
+            )
+            console.print(f"  [cyan]Total VRAM:[/cyan] {total_vram:.0f} GB")
+            console.print(f"  [cyan]Usage:[/cyan] {usage_pct:.1f}% ({vram_left:.1f} GB left)")
+            console.print(f"  [cyan]Price/Hour:[/cyan] ${minimum.get('pricePerHourUsd', 0):.2f}")
+            console.print()
+            console.print("[dim]Deploy with:[/dim]")
+            console.print(
+                f"[dim]  hf-cloud sagemaker deploy {model_id} --name <name> "
+                f"--instance-type {minimum.get('instanceType')}[/dim]"
+            )
+
+    except HfMemError as e:
+        console.print(f"[bold red]Error:[/bold red] {e.message}")
+        if e.details:
+            console.print(f"[dim]{e.details}[/dim]")
+        raise typer.Exit(code=1)

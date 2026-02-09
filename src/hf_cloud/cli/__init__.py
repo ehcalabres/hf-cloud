@@ -3,8 +3,8 @@
 import typer
 
 from hf_cloud.cli.global_commands import list_all_deployments, providers_app
-from hf_cloud.providers.sagemaker import sagemaker_app
-from hf_cloud.providers.vertex import vertex_app
+from hf_cloud.cli.sagemaker import sagemaker_app
+from hf_cloud.cli.vertex import vertex_app
 
 app = typer.Typer(
     name="hf-cloud",

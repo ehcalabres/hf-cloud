@@ -1,0 +1,191 @@
+{
+  "provider": "vertex",
+  "last_updated": "2025-01-01",
+  "safetyMarginDefault": 0.1,
+  "instances": [
+    {
+      "instanceType": "g2-standard-4",
+      "acceleratorType": "NVIDIA_L4",
+      "numGpu": 1,
+      "gpuMemGbPerGpu": 24,
+      "startupTimeoutSeconds": 900,
+      "pricePerHourUsd": 0.7068
+    },
+    {
+      "instanceType": "g2-standard-8",
+      "acceleratorType": "NVIDIA_L4",
+      "numGpu": 1,
+      "gpuMemGbPerGpu": 24,
+      "startupTimeoutSeconds": 900,
+      "pricePerHourUsd": 0.8536
+    },
+    {
+      "instanceType": "g2-standard-12",
+      "acceleratorType": "NVIDIA_L4",
+      "numGpu": 1,
+      "gpuMemGbPerGpu": 24,
+      "startupTimeoutSeconds": 900,
+      "pricePerHourUsd": 1.0004
+    },
+    {
+      "instanceType": "g2-standard-16",
+      "acceleratorType": "NVIDIA_L4",
+      "numGpu": 1,
+      "gpuMemGbPerGpu": 24,
+      "startupTimeoutSeconds": 900,
+      "pricePerHourUsd": 1.1472
+    },
+    {
+      "instanceType": "g2-standard-24",
+      "acceleratorType": "NVIDIA_L4",
+      "numGpu": 2,
+      "gpuMemGbPerGpu": 24,
+      "startupTimeoutSeconds": 900,
+      "pricePerHourUsd": 2.0008
+    },
+    {
+      "instanceType": "g2-standard-32",
+      "acceleratorType": "NVIDIA_L4",
+      "numGpu": 1,
+      "gpuMemGbPerGpu": 24,
+      "startupTimeoutSeconds": 900,
+      "pricePerHourUsd": 1.5876
+    },
+    {
+      "instanceType": "g2-standard-48",
+      "acceleratorType": "NVIDIA_L4",
+      "numGpu": 4,
+      "gpuMemGbPerGpu": 24,
+      "startupTimeoutSeconds": 900,
+      "pricePerHourUsd": 4.0017
+    },
+    {
+      "instanceType": "g2-standard-96",
+      "acceleratorType": "NVIDIA_L4",
+      "numGpu": 8,
+      "gpuMemGbPerGpu": 24,
+      "startupTimeoutSeconds": 900,
+      "pricePerHourUsd": 8.0033
+    },
+    {
+      "instanceType": "a2-highgpu-1g",
+      "acceleratorType": "NVIDIA_A100_40GB",
+      "numGpu": 1,
+      "gpuMemGbPerGpu": 40,
+      "startupTimeoutSeconds": 900,
+      "pricePerHourUsd": 3.6734
+    },
+    {
+      "instanceType": "a2-highgpu-2g",
+      "acceleratorType": "NVIDIA_A100_40GB",
+      "numGpu": 2,
+      "gpuMemGbPerGpu": 40,
+      "startupTimeoutSeconds": 900,
+      "pricePerHourUsd": 7.3468
+    },
+    {
+      "instanceType": "a2-highgpu-4g",
+      "acceleratorType": "NVIDIA_A100_40GB",
+      "numGpu": 4,
+      "gpuMemGbPerGpu": 40,
+      "startupTimeoutSeconds": 900,
+      "pricePerHourUsd": 14.6936
+    },
+    {
+      "instanceType": "a2-highgpu-8g",
+      "acceleratorType": "NVIDIA_A100_40GB",
+      "numGpu": 8,
+      "gpuMemGbPerGpu": 40,
+      "startupTimeoutSeconds": 900,
+      "pricePerHourUsd": 29.3871
+    },
+    {
+      "instanceType": "a2-megagpu-16g",
+      "acceleratorType": "NVIDIA_A100_40GB",
+      "numGpu": 16,
+      "gpuMemGbPerGpu": 40,
+      "startupTimeoutSeconds": 900,
+      "pricePerHourUsd": 58.7742
+    },
+    {
+      "instanceType": "a2-ultragpu-1g",
+      "acceleratorType": "NVIDIA_A100_80GB",
+      "numGpu": 1,
+      "gpuMemGbPerGpu": 80,
+      "startupTimeoutSeconds": 900,
+      "pricePerHourUsd": 5.0578
+    },
+    {
+      "instanceType": "a2-ultragpu-2g",
+      "acceleratorType": "NVIDIA_A100_80GB",
+      "numGpu": 2,
+      "gpuMemGbPerGpu": 80,
+      "startupTimeoutSeconds": 900,
+      "pricePerHourUsd": 10.1156
+    },
+    {
+      "instanceType": "a2-ultragpu-4g",
+      "acceleratorType": "NVIDIA_A100_80GB",
+      "numGpu": 4,
+      "gpuMemGbPerGpu": 80,
+      "startupTimeoutSeconds": 900,
+      "pricePerHourUsd": 20.2312
+    },
+    {
+      "instanceType": "a2-ultragpu-8g",
+      "acceleratorType": "NVIDIA_A100_80GB",
+      "numGpu": 8,
+      "gpuMemGbPerGpu": 80,
+      "startupTimeoutSeconds": 900,
+      "pricePerHourUsd": 40.5504
+    },
+    {
+      "instanceType": "a3-highgpu-1g",
+      "acceleratorType": "NVIDIA_H100_80GB",
+      "numGpu": 1,
+      "gpuMemGbPerGpu": 80,
+      "startupTimeoutSeconds": 900,
+      "pricePerHourUsd": 11.266
+    },
+    {
+      "instanceType": "a3-highgpu-2g",
+      "acceleratorType": "NVIDIA_H100_80GB",
+      "numGpu": 2,
+      "gpuMemGbPerGpu": 80,
+      "startupTimeoutSeconds": 900,
+      "pricePerHourUsd": 21.8427
+    },
+    {
+      "instanceType": "a3-highgpu-4g",
+      "acceleratorType": "NVIDIA_H100_80GB",
+      "numGpu": 4,
+      "gpuMemGbPerGpu": 80,
+      "startupTimeoutSeconds": 900,
+      "pricePerHourUsd": 43.9162
+    },
+    {
+      "instanceType": "a3-highgpu-8g",
+      "acceleratorType": "NVIDIA_H100_80GB",
+      "numGpu": 8,
+      "gpuMemGbPerGpu": 80,
+      "startupTimeoutSeconds": 900,
+      "pricePerHourUsd": 101.0074
+    },
+    {
+      "instanceType": "a3-megagpu-8g",
+      "acceleratorType": "NVIDIA_H100_80GB",
+      "numGpu": 8,
+      "gpuMemGbPerGpu": 80,
+      "startupTimeoutSeconds": 900,
+      "pricePerHourUsd": 106.0464
+    },
+    {
+      "instanceType": "a3-ultragpu-8g",
+      "acceleratorType": "NVIDIA_H200_141GB",
+      "numGpu": 8,
+      "gpuMemGbPerGpu": 141,
+      "startupTimeoutSeconds": 900,
+      "pricePerHourUsd": 99.7739
+    }
+  ]
+}

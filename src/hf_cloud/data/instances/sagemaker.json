@@ -1,0 +1,84 @@
+{
+  "provider": "sagemaker",
+  "last_updated": "2025-01-01",
+  "safetyMarginDefault": 0.1,
+  "instances": [
+    {
+      "instanceType": "ml.g6.2xlarge",
+      "numGpu": 1,
+      "gpuMemGbPerGpu": 24,
+      "startupTimeoutSeconds": 900,
+      "pricePerHourUsd": 0.9776
+    },
+    {
+      "instanceType": "ml.g5.2xlarge",
+      "numGpu": 1,
+      "gpuMemGbPerGpu": 24,
+      "startupTimeoutSeconds": 900,
+      "pricePerHourUsd": 1.212
+    },
+    {
+      "instanceType": "ml.g6e.2xlarge",
+      "numGpu": 1,
+      "gpuMemGbPerGpu": 48,
+      "startupTimeoutSeconds": 900,
+      "pricePerHourUsd": 2.24208
+    },
+    {
+      "instanceType": "ml.g6.12xlarge",
+      "numGpu": 4,
+      "gpuMemGbPerGpu": 24,
+      "startupTimeoutSeconds": 1800,
+      "pricePerHourUsd": 4.6016
+    },
+    {
+      "instanceType": "ml.g5.12xlarge",
+      "numGpu": 4,
+      "gpuMemGbPerGpu": 24,
+      "startupTimeoutSeconds": 1800,
+      "pricePerHourUsd": 5.672
+    },
+    {
+      "instanceType": "ml.g6e.12xlarge",
+      "numGpu": 4,
+      "gpuMemGbPerGpu": 48,
+      "startupTimeoutSeconds": 1800,
+      "pricePerHourUsd": 10.49264
+    },
+    {
+      "instanceType": "ml.g6.48xlarge",
+      "numGpu": 8,
+      "gpuMemGbPerGpu": 24,
+      "startupTimeoutSeconds": 3600,
+      "pricePerHourUsd": 13.3504
+    },
+    {
+      "instanceType": "ml.g5.48xlarge",
+      "numGpu": 8,
+      "gpuMemGbPerGpu": 24,
+      "startupTimeoutSeconds": 3600,
+      "pricePerHourUsd": 16.288
+    },
+    {
+      "instanceType": "ml.g6e.48xlarge",
+      "numGpu": 8,
+      "gpuMemGbPerGpu": 48,
+      "startupTimeoutSeconds": 3600,
+      "pricePerHourUsd": 30.13118
+    },
+    {
+      "instanceType": "ml.p4d.24xlarge",
+      "numGpu": 8,
+      "gpuMemGbPerGpu": 144,
+      "startupTimeoutSeconds": 3600,
+      "pricePerHourUsd": 21.95764
+    },
+    {
+      "instanceType": "ml.p5.48xlarge",
+      "numGpu": 8,
+      "gpuMemGbPerGpu": 256,
+      "startupTimeoutSeconds": 3600,
+      "pricePerHourUsd": 55.04
+    }
+  ]
+}
