@@ -1,6 +1,6 @@
 {
   "provider": "sagemaker",
-  "last_updated": "2025-01-01",
+  "last_updated": "2026-03-16",
   "safetyMarginDefault": 0.1,
   "instances": [
     {
@@ -8,77 +8,112 @@
       "numGpu": 1,
       "gpuMemGbPerGpu": 24,
       "startupTimeoutSeconds": 900,
-      "pricePerHourUsd": 0.9776
+      "pricePerHourUsd": 1.222
     },
     {
       "instanceType": "ml.g5.2xlarge",
       "numGpu": 1,
       "gpuMemGbPerGpu": 24,
       "startupTimeoutSeconds": 900,
-      "pricePerHourUsd": 1.212
+      "pricePerHourUsd": 1.52
     },
     {
       "instanceType": "ml.g6e.2xlarge",
       "numGpu": 1,
       "gpuMemGbPerGpu": 48,
       "startupTimeoutSeconds": 900,
-      "pricePerHourUsd": 2.24208
+      "pricePerHourUsd": 2.8026
     },
     {
       "instanceType": "ml.g6.12xlarge",
       "numGpu": 4,
       "gpuMemGbPerGpu": 24,
       "startupTimeoutSeconds": 1800,
-      "pricePerHourUsd": 4.6016
+      "pricePerHourUsd": 5.752
     },
     {
       "instanceType": "ml.g5.12xlarge",
       "numGpu": 4,
       "gpuMemGbPerGpu": 24,
       "startupTimeoutSeconds": 1800,
-      "pricePerHourUsd": 5.672
+      "pricePerHourUsd": 7.09
     },
     {
       "instanceType": "ml.g6e.12xlarge",
       "numGpu": 4,
       "gpuMemGbPerGpu": 48,
       "startupTimeoutSeconds": 1800,
-      "pricePerHourUsd": 10.49264
+      "pricePerHourUsd": 13.1158
+    },
+    {
+      "instanceType": "ml.g6.24xlarge",
+      "numGpu": 4,
+      "gpuMemGbPerGpu": 24,
+      "startupTimeoutSeconds": 1800,
+      "pricePerHourUsd": 8.344
+    },
+    {
+      "instanceType": "ml.g5.24xlarge",
+      "numGpu": 4,
+      "gpuMemGbPerGpu": 24,
+      "startupTimeoutSeconds": 1800,
+      "pricePerHourUsd": 10.18
+    },
+    {
+      "instanceType": "ml.g6e.24xlarge",
+      "numGpu": 4,
+      "gpuMemGbPerGpu": 48,
+      "startupTimeoutSeconds": 1800,
+      "pricePerHourUsd": 18.832
     },
     {
       "instanceType": "ml.g6.48xlarge",
       "numGpu": 8,
       "gpuMemGbPerGpu": 24,
       "startupTimeoutSeconds": 3600,
-      "pricePerHourUsd": 13.3504
+      "pricePerHourUsd": 16.688
     },
     {
       "instanceType": "ml.g5.48xlarge",
       "numGpu": 8,
       "gpuMemGbPerGpu": 24,
       "startupTimeoutSeconds": 3600,
-      "pricePerHourUsd": 16.288
+      "pricePerHourUsd": 20.36
     },
     {
       "instanceType": "ml.g6e.48xlarge",
       "numGpu": 8,
       "gpuMemGbPerGpu": 48,
       "startupTimeoutSeconds": 3600,
-      "pricePerHourUsd": 30.13118
+      "pricePerHourUsd": 37.664
     },
     {
       "instanceType": "ml.p4d.24xlarge",
       "numGpu": 8,
-      "gpuMemGbPerGpu": 144,
+      "gpuMemGbPerGpu": 40,
       "startupTimeoutSeconds": 3600,
-      "pricePerHourUsd": 21.95764
+      "pricePerHourUsd": 25.2513
+    },
+    {
+      "instanceType": "ml.p4de.24xlarge",
+      "numGpu": 8,
+      "gpuMemGbPerGpu": 80,
+      "startupTimeoutSeconds": 3600,
+      "pricePerHourUsd": 31.5641
     },
     {
       "instanceType": "ml.p5.48xlarge",
       "numGpu": 8,
-      "gpuMemGbPerGpu": 256,
+      "gpuMemGbPerGpu": 80,
       "startupTimeoutSeconds": 3600,
-      "pricePerHourUsd": 55.04
+      "pricePerHourUsd": 63.296
+    },
+    {
+      "instanceType": "ml.p5e.48xlarge",
+      "numGpu": 8,
+      "gpuMemGbPerGpu": 141,
+      "startupTimeoutSeconds": 3600,
+      "pricePerHourUsd": 72.795
     }
   ]
 }
