@@ -216,7 +216,3 @@ pytest
 # Run linting
 ruff check src/
 ```
-
-## License
-
-Apache-2.0
