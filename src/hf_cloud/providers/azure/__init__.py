@@ -1,6 +1,7 @@
+
 """Azure ML provider implementation (stub for Phase 1)."""
 
-from typing import Any
+from typing import Any, Optional
 
 from ...core.deployment import Deployment, DeploymentStatus
 from ...core.exceptions import ProviderError
@@ -29,11 +30,11 @@ class AzureProvider(CloudProvider):
         model_id: str,
         deployment_name: str,
         config: dict[str, Any],
-        token: str | None = None,
+        token: Optional[str] = None,
     ) -> Deployment:
         raise NotImplementedError("Azure provider will be implemented in Phase 3")
 
-    def list_deployments(self, filters: dict[str, Any] | None = None) -> list[Deployment]:
+    def list_deployments(self, filters: Optional[dict[str, Any]] = None) -> list[Deployment]:
         raise NotImplementedError("Azure provider will be implemented in Phase 3")
 
     def get_deployment(self, deployment_id: str) -> Deployment:

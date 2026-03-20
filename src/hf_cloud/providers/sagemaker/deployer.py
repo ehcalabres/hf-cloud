@@ -1,7 +1,8 @@
+
 """SageMaker deployment operations using ModelBuilder."""
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Optional
 
 from rich.console import Console
 
@@ -37,7 +38,7 @@ class SageMakerDeployer:
         model_id: str,
         deployment_name: str,
         config: dict[str, Any],
-        token: str | None = None,
+        token: Optional[str] = None,
     ) -> Deployment:
         """Deploy a HuggingFace model to SageMaker using ModelBuilder.
 

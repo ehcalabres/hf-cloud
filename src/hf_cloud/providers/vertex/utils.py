@@ -1,7 +1,9 @@
+
 """Vertex AI utility functions."""
 
 import re
 import time
+from typing import Optional
 
 
 def sanitize_endpoint_name(name: str) -> str:
@@ -66,7 +68,7 @@ def get_serving_container_uri(location: str = "us-central1", use_gpu: bool = Fal
     return cuda_version if use_gpu else cpu_version
 
 
-def get_vertex_env_vars(model_id: str, token: str | None = None, task: str | None = None) -> dict[str, str]:
+def get_vertex_env_vars(model_id: str, token: Optional[str] = None, task: Optional[str] = None) -> dict[str, str]:
     """Get environment variables for Vertex AI deployment.
 
     Args:

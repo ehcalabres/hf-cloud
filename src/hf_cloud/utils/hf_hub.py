@@ -1,11 +1,12 @@
+
 """HuggingFace Hub integration utilities."""
 
-from typing import Any
+from typing import Any, Optional
 
 from ..core.exceptions import HFCloudError
 
 
-def get_model_info(model_id: str, token: str | None = None) -> dict[str, Any]:
+def get_model_info(model_id: str, token: Optional[str] = None) -> dict[str, Any]:
     """Get model information from HuggingFace Hub.
 
     Args:
@@ -53,7 +54,7 @@ def get_model_info(model_id: str, token: str | None = None) -> dict[str, Any]:
         raise HFCloudError(f"Failed to get model info: {e}")
 
 
-def validate_model_exists(model_id: str, token: str | None = None) -> bool:
+def validate_model_exists(model_id: str, token: Optional[str] = None) -> bool:
     """Check if a model exists on HuggingFace Hub.
 
     Args:
@@ -70,7 +71,7 @@ def validate_model_exists(model_id: str, token: str | None = None) -> bool:
         return False
 
 
-def get_model_task(model_id: str, token: str | None = None) -> str:
+def get_model_task(model_id: str, token: Optional[str] = None) -> str:
     """Get the pipeline task for a model.
 
     Args:
@@ -89,7 +90,7 @@ def get_model_task(model_id: str, token: str | None = None) -> str:
 
 def download_model_config(
     model_id: str,
-    token: str | None = None,
+    token: Optional[str] = None,
 ) -> dict[str, Any]:
     """Download and parse model config.json from HuggingFace Hub.
 
@@ -119,7 +120,7 @@ def download_model_config(
 
 
 # TODO: Update these estimates with the usage of `hf-mem` library
-def estimate_model_size(model_id: str, token: str | None = None) -> int:
+def estimate_model_size(model_id: str, token: Optional[str] = None) -> int:
     """Estimate model size in bytes.
 
     Args:
@@ -153,7 +154,7 @@ def estimate_model_size(model_id: str, token: str | None = None) -> int:
 
 
 # TODO: Refine recommendations based on more model data and provider specific instance types
-def get_model_requirements(model_id: str, token: str | None = None) -> dict[str, Any]:
+def get_model_requirements(model_id: str, token: Optional[str] = None) -> dict[str, Any]:
     """Get model resource requirements based on size and type.
 
     Args:

@@ -1,7 +1,8 @@
+
 """Vertex AI deployment operations."""
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Optional
 
 from rich.console import Console
 
@@ -21,7 +22,7 @@ console = Console()
 class VertexDeployer:
     """Handles Vertex AI deployment operations."""
 
-    def __init__(self, client: VertexClient, project: str | None = None, location: str = "us-central1"):
+    def __init__(self, client: VertexClient, project: Optional[str] = None, location: str = "us-central1"):
         """Initialize deployer.
 
         Args:
@@ -38,7 +39,7 @@ class VertexDeployer:
         model_id: str,
         deployment_name: str,
         config: dict[str, Any],
-        token: str | None = None,
+        token: Optional[str] = None,
     ) -> Deployment:
         """Deploy a HuggingFace model to Vertex AI.
 

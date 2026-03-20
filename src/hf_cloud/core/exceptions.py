@@ -1,10 +1,13 @@
+
 """Custom exceptions for HF-Cloud."""
+
+from typing import Optional
 
 
 class HFCloudError(Exception):
     """Base exception for all HF-Cloud errors."""
 
-    def __init__(self, message: str, details: str | None = None):
+    def __init__(self, message: str, details: Optional[str] = None):
         self.message = message
         self.details = details
         super().__init__(self.message)
@@ -18,7 +21,7 @@ class HFCloudError(Exception):
 class ProviderError(HFCloudError):
     """Error related to cloud provider operations."""
 
-    def __init__(self, provider: str, message: str, details: str | None = None):
+    def __init__(self, provider: str, message: str, details: Optional[str] = None):
         self.provider = provider
         super().__init__(f"[{provider}] {message}", details)
 
@@ -29,8 +32,8 @@ class DeploymentError(HFCloudError):
     def __init__(
         self,
         message: str,
-        deployment_id: str | None = None,
-        details: str | None = None,
+        deployment_id: Optional[str] = None,
+        details: Optional[str] = None,
     ):
         self.deployment_id = deployment_id
         prefix = f"[{deployment_id}] " if deployment_id else ""
@@ -46,7 +49,7 @@ class ConfigurationError(HFCloudError):
 class AuthenticationError(HFCloudError):
     """Error related to authentication."""
 
-    def __init__(self, provider: str, message: str, details: str | None = None):
+    def __init__(self, provider: str, message: str, details: Optional[str] = None):
         self.provider = provider
         super().__init__(f"[{provider}] Authentication failed: {message}", details)
 

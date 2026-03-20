@@ -1,8 +1,9 @@
+
 """SageMaker utility functions."""
 
 import re
 import time
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 from huggingface_hub import model_info
 
@@ -107,7 +108,7 @@ def get_sagemaker_endpoint_name(model_id: str) -> str:
     return sanitize_endpoint_name(name)
 
 
-def get_sagemaker_env_vars(model_id: str, token: str | None = None, task: str | None = None) -> dict[str, str]:
+def get_sagemaker_env_vars(model_id: str, token: Optional[str] = None, task: Optional[str] = None) -> dict[str, str]:
     """Get environment variables for SageMaker deployment.
 
     Args:
@@ -168,7 +169,7 @@ def sanitize_endpoint_name(name: str) -> str:
     return sanitized
 
 
-def get_model_config(model_id: str, token: str | None = None) -> dict[str, Any]:
+def get_model_config(model_id: str, token: Optional[str] = None) -> dict[str, Any]:
     """Get model configuration from HuggingFace Hub.
 
     Args:
@@ -205,7 +206,7 @@ def get_model_config(model_id: str, token: str | None = None) -> dict[str, Any]:
         }
 
 
-def estimate_instance_type(model_id: str, token: str | None = None) -> str:
+def estimate_instance_type(model_id: str, token: Optional[str] = None) -> str:
     """Estimate appropriate instance type based on model size.
 
     Args:

@@ -1,8 +1,9 @@
+
 """SageMaker management operations."""
 
 import json
 from datetime import datetime
-from typing import Any
+from typing import Any, Optional
 
 from ...core.deployment import Deployment, DeploymentStatus
 from ...core.exceptions import DeploymentError, DeploymentNotFoundError, ProviderError
@@ -32,7 +33,7 @@ class SageMakerManager:
         """
         self.client = client
 
-    def list_deployments(self, filters: dict[str, Any] | None = None) -> list[Deployment]:
+    def list_deployments(self, filters: Optional[dict[str, Any]] = None) -> list[Deployment]:
         """List SageMaker endpoints.
 
         Args:

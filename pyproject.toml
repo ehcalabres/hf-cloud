@@ -1,14 +1,14 @@
 [project]
 name = "hf-cloud"
 version = "0.1.0"
-description = "Manage HuggingFace model deployments across cloud providers"
+description = "Manage Hugging Face model deployments across cloud providers directly from the hf CLI."
 readme = "README.md"
 authors = [
     {name = "Enrique Hernández Calabrés", email = "ehcalabres@gmail.com"}
 ]
 license = "MIT"
 license-files = ["LICENSE"]
-requires-python = ">=3.12"
+requires-python = ">=3.9"
 dependencies = [
     "typer>=0.21.1",
     "pydantic>=2.12.5",

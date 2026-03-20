@@ -1,8 +1,9 @@
+
 """Vertex AI management operations."""
 
 import json
 from datetime import datetime
-from typing import Any
+from typing import Any, Optional
 
 from rich.console import Console
 
@@ -30,7 +31,7 @@ STATUS_MAP = {
 class VertexManager:
     """Handles Vertex AI management operations."""
 
-    def __init__(self, client: VertexClient, project: str | None = None, location: str = "us-central1"):
+    def __init__(self, client: VertexClient, project: Optional[str] = None, location: str = "us-central1"):
         """Initialize manager.
 
         Args:
@@ -46,7 +47,7 @@ class VertexManager:
         """Get the project ID."""
         return self.project or self.client.get_project()
 
-    def list_deployments(self, filters: dict[str, Any] | None = None) -> list[Deployment]:
+    def list_deployments(self, filters: Optional[dict[str, Any]] = None) -> list[Deployment]:
         """List Vertex AI endpoints.
 
         Args:

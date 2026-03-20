@@ -1,7 +1,8 @@
+
 """Base provider interface for cloud providers."""
 
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, Optional
 
 from hf_cloud.core.deployment import Deployment, DeploymentStatus
 
@@ -20,7 +21,7 @@ class CloudProvider(ABC):
         model_id: str,
         deployment_name: str,
         config: dict[str, Any],
-        token: str | None = None,
+        token: Optional[str] = None,
     ) -> Deployment:
         """Deploy a model and return deployment information.
 
@@ -36,7 +37,7 @@ class CloudProvider(ABC):
         pass
 
     @abstractmethod
-    def list_deployments(self, filters: dict[str, Any] | None = None) -> list[Deployment]:
+    def list_deployments(self, filters: Optional[dict[str, Any]] = None) -> list[Deployment]:
         """List all deployments for this provider.
 
         Args:

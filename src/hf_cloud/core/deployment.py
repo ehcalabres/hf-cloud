@@ -1,9 +1,10 @@
+
 """Deployment data models."""
 
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any
+from typing import Any, Optional
 
 
 class DeploymentStatus(str, Enum):
@@ -34,19 +35,19 @@ class Deployment:
     config: dict[str, Any]
 
     # Endpoints
-    endpoint_url: str | None = None
+    endpoint_url: Optional[str] = None
 
     # Metadata
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
-    region: str | None = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    region: Optional[str] = None
 
     # Resource information
-    instance_type: str | None = None
-    instance_count: int | None = None
+    instance_type: Optional[str] = None
+    instance_count: Optional[int] = None
 
     # Cost tracking
-    estimated_cost_per_hour: float | None = None
+    estimated_cost_per_hour: Optional[float] = None
 
     # Tags
     tags: dict[str, str] = field(default_factory=dict)

@@ -1,4 +1,7 @@
+
 """CLI utility functions."""
+
+from typing import Optional
 
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
@@ -23,7 +26,7 @@ def create_spinner(description: str) -> Progress:
     )
 
 
-def print_error(message: str, details: str | None = None) -> None:
+def print_error(message: str, details: Optional[str] = None) -> None:
     """Print an error message.
 
     Args:
