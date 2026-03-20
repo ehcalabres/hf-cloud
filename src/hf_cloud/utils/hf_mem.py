@@ -88,7 +88,7 @@ def run_hf_mem(model_id: str, timeout: int = 120) -> HfMemEstimate:
     """
     try:
         result = _run_command(
-            ["uvx", "hf-mem", "--json-output", "--model-id", model_id],
+            ["uvx", "hf-mem", "--model-id", model_id, "--json-output", "--experimental"],
             timeout_s=timeout,
         )
 
@@ -107,10 +107,14 @@ def run_hf_mem(model_id: str, timeout: int = 120) -> HfMemEstimate:
 
         payload = json.loads(raw_output)
         bytes_count = payload.get("bytes_count")
+        if bytes_count is None:
+            # Newer hf-mem JSON output may expose `total_memory`/`memory`
+            # instead of `bytes_count`.
+            bytes_count = payload.get("total_memory", payload.get("memory"))
 
         if bytes_count is None:
             raise HfMemError(
-                f"hf-mem output missing 'bytes_count' for {model_id}",
+                f"hf-mem output missing memory bytes for {model_id}",
                 details=f"Output: {raw_output}",
             )
 
