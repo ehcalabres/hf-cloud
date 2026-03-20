@@ -1,0 +1,3 @@
+{
+  "description": "Manage Hugging Face model deployments across cloud providers directly from the hf CLI."
+}

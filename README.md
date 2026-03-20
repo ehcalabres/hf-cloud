@@ -2,6 +2,37 @@
 
 A CLI tool for managing HuggingFace model deployments across multiple cloud providers.
 
+## Installation modes
+
+HF-Cloud can be used in two equivalent ways:
+
+- Standalone CLI install: commands are prefixed with `hf-cloud ...`
+- Hugging Face Hub CLI extension install: commands are prefixed with `hf cloud ...`
+
+In the examples below, replace `<cli>` with either `hf-cloud` or `hf cloud`.
+
+## Hugging Face CLI extension
+
+This project is packaged as a Python `hf` CLI extension.
+
+- Repository name follows the required convention: `hf-cloud` (`hf-<name>`).
+- Python entrypoint is exposed as `hf-cloud` (required `hf-<name>` script).
+- Users invoke it through the Hub CLI as: `hf cloud ...`.
+
+Discover/install commands:
+
+```bash
+# Discover community extensions (requires this repo to have the `hf-extension` GitHub topic)
+hf extensions search
+
+# Install this extension from GitHub
+hf extensions install <owner>/hf-cloud
+
+# Run extension commands
+hf cloud --help
+hf cloud sagemaker ls
+```
+
 ## Installation
 
 ### From Source (Development)
@@ -34,13 +65,13 @@ pip install -e ".[dev]"
 You can configure some default settings for your cloud provider. This step is optional, as you can also provide these settings via command-line arguments during deployment or use the default configuration from your environment.
 
 ```bash
-hf-cloud providers configure sagemaker
+<cli> providers configure sagemaker
 ```
 
 ### 2. Deploy a model
 
 ```bash
-hf-cloud sagemaker deploy gpt2 \
+<cli> sagemaker deploy gpt2 \
   --name my-gpt2-endpoint \
   --instance-type ml.g5.xlarge \
   --region us-east-1
@@ -49,42 +80,50 @@ hf-cloud sagemaker deploy gpt2 \
 ### 3. Check deployment status
 
 ```bash
-hf-cloud sagemaker status my-gpt2-endpoint
+<cli> sagemaker status my-gpt2-endpoint
 ```
 
 ### 4. Test inference
 
 ```bash
-hf-cloud sagemaker invoke my-gpt2-endpoint \
+<cli> sagemaker invoke my-gpt2-endpoint \
   --input "Once upon a time"
 ```
 
 ### 5. List all deployments
 
 ```bash
-hf-cloud ls
+<cli> ls
 ```
 
-### 6. Delete deployment
+### 6. Estimate required instance for a model
 
 ```bash
-hf-cloud sagemaker delete my-gpt2-endpoint
+<cli> sagemaker estimate meta-llama/Llama-2-7b-hf
+<cli> vertex estimate meta-llama/Llama-2-7b-hf
+```
+
+### 7. Delete deployment
+
+```bash
+<cli> sagemaker delete my-gpt2-endpoint
 ```
 
 ## Commands
 
 | Command | Description |
 |---------|-------------|
-| `hf-cloud [PROVIDER] deploy <model>` | Deploy a model to the specified provider |
-| `hf-cloud [PROVIDER] ls` | List deployments for the specified provider |
-| `hf-cloud [PROVIDER] describe <id>` | Show deployment details |
-| `hf-cloud [PROVIDER] status <id>` | Check deployment status |
-| `hf-cloud [PROVIDER] logs <id>` | View deployment logs |
-| `hf-cloud [PROVIDER] invoke <id>` | Test inference |
-| `hf-cloud [PROVIDER] delete <id>` | Delete deployment |
-| `hf-cloud ls` | List all deployments (all providers) |
-| `hf-cloud providers ls` | List available providers |
-| `hf-cloud providers configure <provider>` | Configure provider credentials |
+| `<cli> [PROVIDER] deploy <model>` | Deploy a model to the specified provider |
+| `<cli> [PROVIDER] ls` | List deployments for the specified provider |
+| `<cli> [PROVIDER] describe <id>` | Show deployment details |
+| `<cli> [PROVIDER] status <id>` | Check deployment status |
+| `<cli> [PROVIDER] logs <id>` | View deployment logs |
+| `<cli> [PROVIDER] invoke <id>` | Test inference |
+| `<cli> [PROVIDER] estimate <model>` | Estimate minimum viable instance for a model |
+| `<cli> [PROVIDER] delete <id>` | Delete deployment |
+| `<cli> ls` | List all deployments (all providers) |
+| `<cli> providers ls` | List available providers |
+| `<cli> providers configure <provider>` | Configure provider credentials |
 
 ## Supported Providers
 
@@ -98,51 +137,61 @@ hf-cloud sagemaker delete my-gpt2-endpoint
 
 ```bash
 # Configure (optional)
-hf-cloud providers configure sagemaker
+<cli> providers configure sagemaker
 
 # Deploy
-hf-cloud sagemaker deploy gpt2 \
+<cli> sagemaker deploy gpt2 \
   --name my-gpt2-endpoint \
   --instance-type ml.g5.xlarge \
   --region us-east-1
 
 # Check status
-hf-cloud sagemaker status my-gpt2-endpoint
+<cli> sagemaker status my-gpt2-endpoint
 
 # Invoke
-hf-cloud sagemaker invoke my-gpt2-endpoint --input "Hello world"
+<cli> sagemaker invoke my-gpt2-endpoint --input "Hello world"
+
+# Estimate minimum viable instance
+<cli> sagemaker estimate meta-llama/Llama-2-7b-hf
+# Show all compatible instances
+<cli> sagemaker estimate meta-llama/Llama-2-7b-hf --all
 
 # Delete
-hf-cloud sagemaker delete my-gpt2-endpoint
+<cli> sagemaker delete my-gpt2-endpoint
 ```
 
 ### Google Cloud Vertex AI
 
 ```bash
 # Configure (optional)
-hf-cloud providers configure vertex
+<cli> providers configure vertex
 
 # Deploy
-hf-cloud vertex deploy gpt2 \
+<cli> vertex deploy gpt2 \
   --name my-gpt2-endpoint \
   --machine-type n1-standard-4 \
   --location us-central1
 
 # Deploy with GPU
-hf-cloud vertex deploy meta-llama/Llama-2-7b-hf \
+<cli> vertex deploy meta-llama/Llama-2-7b-hf \
   --name my-llama-endpoint \
   --machine-type n1-standard-8 \
   --accelerator-type NVIDIA_TESLA_T4 \
   --accelerator-count 1
 
 # Check status
-hf-cloud vertex status my-gpt2-endpoint
+<cli> vertex status my-gpt2-endpoint
 
 # Invoke
-hf-cloud vertex invoke my-gpt2-endpoint --input "Hello world"
+<cli> vertex invoke my-gpt2-endpoint --input "Hello world"
+
+# Estimate minimum viable machine/GPU configuration
+<cli> vertex estimate meta-llama/Llama-2-7b-hf
+# JSON output for scripting
+<cli> vertex estimate meta-llama/Llama-2-7b-hf --json
 
 # Delete
-hf-cloud vertex delete my-gpt2-endpoint
+<cli> vertex delete my-gpt2-endpoint
 ```
 
 ## Requirements
