@@ -26,11 +26,26 @@ class StateManager:
 
     def _load_state(self) -> None:
         """Load state from file."""
-        if self.state_file.exists():
+        default_state = {"deployments": {}}
+        if not self.state_file.exists():
+            self._state = default_state
+            return
+
+        try:
             with open(self.state_file, "r") as f:
-                self._state = json.load(f)
-        else:
-            self._state = {"deployments": {}}
+                loaded = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            self._state = default_state
+            return
+
+        if not isinstance(loaded, dict):
+            self._state = default_state
+            return
+        if "deployments" not in loaded or not isinstance(loaded["deployments"], dict):
+            self._state = default_state
+            return
+
+        self._state = loaded
 
     def _save_state(self) -> None:
         """Save state to file."""
