@@ -1,6 +1,7 @@
+
 """Google Cloud Vertex AI provider implementation."""
 
-from typing import Any
+from typing import Any, Optional
 
 from hf_cloud.core.deployment import Deployment, DeploymentStatus
 from hf_cloud.providers.base import CloudProvider
@@ -12,7 +13,7 @@ from hf_cloud.providers.vertex.manager import VertexManager
 class VertexProvider(CloudProvider):
     """Google Cloud Vertex AI provider implementation."""
 
-    def __init__(self, project: str | None = None, location: str | None = None):
+    def __init__(self, project: Optional[str] = None, location: Optional[str] = None):
         """Initialize Vertex AI provider.
 
         Args:
@@ -34,7 +35,7 @@ class VertexProvider(CloudProvider):
         model_id: str,
         deployment_name: str,
         config: dict[str, Any],
-        token: str | None = None,
+        token: Optional[str] = None,
     ) -> Deployment:
         """Deploy a model to Vertex AI.
 
@@ -54,7 +55,7 @@ class VertexProvider(CloudProvider):
             token=token,
         )
 
-    def list_deployments(self, filters: dict[str, Any] | None = None) -> list[Deployment]:
+    def list_deployments(self, filters: Optional[dict[str, Any]] = None) -> list[Deployment]:
         """List Vertex AI endpoints.
 
         Args:

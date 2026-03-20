@@ -1,8 +1,9 @@
+
 """Configuration management for HF-Cloud."""
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from hf_cloud.core.exceptions import ConfigurationError
 
@@ -13,7 +14,7 @@ class Config:
     DEFAULT_CONFIG_DIR = Path.home() / ".hf-cloud"
     DEFAULT_CONFIG_FILE = DEFAULT_CONFIG_DIR / "config.json"
 
-    def __init__(self, config_file: Path | None = None):
+    def __init__(self, config_file: Optional[Path] = None):
         """Initialize configuration manager.
 
         Args:
@@ -81,7 +82,7 @@ class Config:
         current.update(updates)
         self.set_provider_config(provider, current)
 
-    def get_default_provider(self) -> str | None:
+    def get_default_provider(self) -> Optional[str]:
         """Get the default provider."""
         return self._config.get("defaults", {}).get("provider")
 

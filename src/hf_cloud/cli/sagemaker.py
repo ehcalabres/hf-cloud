@@ -1,3 +1,4 @@
+
 """AWS SageMaker CLI commands."""
 
 from contextlib import nullcontext
@@ -17,7 +18,7 @@ console = Console()
 sagemaker_app = typer.Typer(help="AWS SageMaker deployment management.")
 
 
-def _get_provider_defaults() -> dict[str, str | None]:
+def _get_provider_defaults() -> dict[str, Optional[str]]:
     """Get default values from provider configuration."""
     config = Config()
     provider_config = config.get_provider_config("sagemaker")

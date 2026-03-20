@@ -9,24 +9,20 @@ HF-Cloud can be used in two equivalent ways:
 - Standalone CLI install: commands are prefixed with `hf-cloud ...`
 - Hugging Face Hub CLI extension install: commands are prefixed with `hf cloud ...`
 
+Preferred method: install and run it as an HF CLI extension (`hf cloud ...`). More details about HF CLI extensions [here](https://huggingface.co/docs/huggingface_hub/guides/cli-extensions).
+
 In the examples below, replace `<cli>` with either `hf-cloud` or `hf cloud`.
 
 ## Hugging Face CLI extension
 
-This project is packaged as a Python `hf` CLI extension.
-
-- Repository name follows the required convention: `hf-cloud` (`hf-<name>`).
-- Python entrypoint is exposed as `hf-cloud` (required `hf-<name>` script).
-- Users invoke it through the Hub CLI as: `hf cloud ...`.
-
-Discover/install commands:
+This project is packaged as a Python `hf` CLI extension. It can be discovered and installed using the following commands:
 
 ```bash
-# Discover community extensions (requires this repo to have the `hf-extension` GitHub topic)
+# Search for available extensions
 hf extensions search
 
 # Install this extension from GitHub
-hf extensions install <owner>/hf-cloud
+hf extensions install ehcalabres/hf-cloud
 
 # Run extension commands
 hf cloud --help
@@ -39,7 +35,7 @@ hf cloud sagemaker ls
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/hf-cloud.git
+git clone https://github.com/ehcalabres/hf-cloud.git
 cd hf-cloud
 
 # Install base CLI
@@ -56,6 +52,28 @@ pip install -e ".[all]"
 
 # Install with development dependencies
 pip install -e ".[dev]"
+```
+
+## Agent Skills
+
+HF-Cloud can scaffold a reusable `SKILL.md` for coding agents.
+
+```bash
+# Preview generated skill content
+<cli> skills preview
+
+# Install skill in project-level central directory (.agents/skills/hf-cloud)
+<cli> skills add
+
+# Install to a custom destination directory
+<cli> skills add --dest ./my-skills
+
+# Link into specific assistant directories
+<cli> skills add --codex
+<cli> skills add --claude --cursor
+
+# Overwrite existing skill files/symlinks
+<cli> skills add --force
 ```
 
 ## Quick Start
@@ -124,6 +142,8 @@ You can configure some default settings for your cloud provider. This step is op
 | `<cli> ls` | List all deployments (all providers) |
 | `<cli> providers ls` | List available providers |
 | `<cli> providers configure <provider>` | Configure provider credentials |
+| `<cli> skills preview` | Preview generated SKILL.md for AI assistants |
+| `<cli> skills add` | Install SKILL.md and optionally symlink to assistant folders |
 
 ## Supported Providers
 
@@ -196,7 +216,7 @@ You can configure some default settings for your cloud provider. This step is op
 
 ## Requirements
 
-- Python 3.12+
+- Python 3.9+
 
 You will also need to have the respective cloud provider authentication set up, so that `hf-cloud` can access your account. Current provider-specific requirements:
 

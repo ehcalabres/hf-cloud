@@ -1,6 +1,7 @@
+
 """Google Cloud Vertex AI client wrapper."""
 
-from typing import Any
+from typing import Any, Optional
 
 from rich.console import Console
 
@@ -12,7 +13,7 @@ console = Console()
 class VertexClient:
     """Wrapper for Google Cloud Vertex AI clients."""
 
-    def __init__(self, project: str | None = None, location: str = "us-central1"):
+    def __init__(self, project: Optional[str] = None, location: str = "us-central1"):
         """Initialize Vertex AI client.
 
         Args:

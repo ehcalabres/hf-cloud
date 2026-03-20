@@ -1,13 +1,15 @@
+
 """Logging utilities for HF-Cloud."""
 
 import logging
 import sys
 from pathlib import Path
+from typing import Optional
 
 
 def setup_logging(
     level: str = "INFO",
-    log_file: Path | None = None,
+    log_file: Optional[Path] = None,
 ) -> logging.Logger:
     """Setup logging for HF-Cloud.
 

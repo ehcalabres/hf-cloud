@@ -1,8 +1,9 @@
+
 """State management for HF-Cloud deployments."""
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from .deployment import Deployment
 
@@ -13,7 +14,7 @@ class StateManager:
     DEFAULT_STATE_DIR = Path.home() / ".hf-cloud"
     DEFAULT_STATE_FILE = DEFAULT_STATE_DIR / "state.json"
 
-    def __init__(self, state_file: Path | None = None):
+    def __init__(self, state_file: Optional[Path] = None):
         """Initialize state manager.
 
         Args:
@@ -45,7 +46,7 @@ class StateManager:
         self._state["deployments"][deployment.deployment_id] = deployment.to_dict()
         self._save_state()
 
-    def get_deployment(self, deployment_id: str) -> dict[str, Any] | None:
+    def get_deployment(self, deployment_id: str) -> Optional[dict[str, Any]]:
         """Get deployment from state.
 
         Args:
@@ -56,7 +57,7 @@ class StateManager:
         """
         return self._state["deployments"].get(deployment_id)
 
-    def get_deployment_object(self, deployment_id: str) -> Deployment | None:
+    def get_deployment_object(self, deployment_id: str) -> Optional[Deployment]:
         """Get deployment as a Deployment object.
 
         Args:
@@ -85,7 +86,7 @@ class StateManager:
             return True
         return False
 
-    def list_deployments(self, provider: str | None = None) -> list[dict[str, Any]]:
+    def list_deployments(self, provider: Optional[str] = None) -> list[dict[str, Any]]:
         """List all deployments, optionally filtered by provider.
 
         Args:
@@ -99,7 +100,7 @@ class StateManager:
             deployments = [d for d in deployments if d.get("provider") == provider]
         return deployments
 
-    def list_deployment_objects(self, provider: str | None = None) -> list[Deployment]:
+    def list_deployment_objects(self, provider: Optional[str] = None) -> list[Deployment]:
         """List all deployments as Deployment objects.
 
         Args:

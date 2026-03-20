@@ -1,6 +1,7 @@
+
 """AWS SageMaker client wrapper."""
 
-from typing import Any
+from typing import Any, Optional
 
 from rich.console import Console
 
@@ -117,7 +118,7 @@ class SageMakerClient:
                 )
             raise ProviderError("sagemaker", f"Failed to verify credentials: {e}")
 
-    def get_execution_role(self, role_name: str | None = None) -> str:
+    def get_execution_role(self, role_name: Optional[str] = None) -> str:
         """Get SageMaker execution role ARN.
 
         Args:

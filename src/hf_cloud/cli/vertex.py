@@ -1,3 +1,4 @@
+
 """Google Cloud Vertex AI CLI commands."""
 
 from contextlib import nullcontext
@@ -16,7 +17,7 @@ console = Console()
 vertex_app = typer.Typer(help="Google Cloud Vertex AI deployment management.")
 
 
-def _get_provider_defaults() -> dict[str, str | None]:
+def _get_provider_defaults() -> dict[str, Optional[str]]:
     """Get default values from provider configuration."""
     config = Config()
     provider_config = config.get_provider_config("vertex")

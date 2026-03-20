@@ -1,6 +1,7 @@
+
 """AWS SageMaker provider implementation."""
 
-from typing import Any
+from typing import Any, Optional
 
 from ...core.deployment import Deployment, DeploymentStatus
 from ..base import CloudProvider
@@ -12,7 +13,7 @@ from .manager import SageMakerManager
 class SageMakerProvider(CloudProvider):
     """AWS SageMaker provider implementation."""
 
-    def __init__(self, region: str | None = None):
+    def __init__(self, region: Optional[str] = None):
         """Initialize SageMaker provider.
 
         Args:
@@ -32,7 +33,7 @@ class SageMakerProvider(CloudProvider):
         model_id: str,
         deployment_name: str,
         config: dict[str, Any],
-        token: str | None = None,
+        token: Optional[str] = None,
     ) -> Deployment:
         """Deploy a model to SageMaker.
 
@@ -52,7 +53,7 @@ class SageMakerProvider(CloudProvider):
             token=token,
         )
 
-    def list_deployments(self, filters: dict[str, Any] | None = None) -> list[Deployment]:
+    def list_deployments(self, filters: Optional[dict[str, Any]] = None) -> list[Deployment]:
         """List SageMaker endpoints.
 
         Args:

@@ -1,3 +1,4 @@
+
 """HF-Mem integration for VRAM estimation."""
 
 import json
@@ -5,7 +6,7 @@ import os
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, TypedDict
+from typing import Any, Optional, TypedDict
 
 from ..core.exceptions import HFCloudError
 
@@ -57,7 +58,7 @@ def _get_total_vram(instance: InstanceInfo) -> float:
 
 
 def _run_command(
-    cmd: list[str], *, env: dict[str, str] | None = None, timeout_s: int = 120
+    cmd: list[str], *, env: Optional[dict[str, str]] = None, timeout_s: int = 120
 ) -> subprocess.CompletedProcess[str]:
     """Run a command and return the result."""
     merged_env = os.environ.copy()
@@ -179,7 +180,7 @@ def find_minimum_instance(
     required_vram_gb: float,
     instances: list[InstanceInfo],
     safety_margin: float = 0.1,
-) -> InstanceInfo | None:
+) -> Optional[InstanceInfo]:
     """Find the minimum viable instance for the required VRAM.
 
     Args:
