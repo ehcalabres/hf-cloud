@@ -1,7 +1,7 @@
 """Cloud provider implementations for HF-Cloud."""
 
-from .base import CloudProvider
-from .registry import ProviderRegistry
+from hf_cloud.providers.base import CloudProvider
+from hf_cloud.providers.registry import ProviderRegistry
 
 __all__ = [
     "CloudProvider",

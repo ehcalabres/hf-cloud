@@ -1,12 +1,12 @@
 """Utility modules for HF-Cloud."""
 
-from .hf_hub import (
+from hf_cloud.utils.hf_hub import (
     download_model_config,
     get_model_info,
     get_model_task,
     validate_model_exists,
 )
-from .validators import (
+from hf_cloud.utils.validators import (
     validate_deployment_name,
     validate_instance_type,
     validate_model_id,

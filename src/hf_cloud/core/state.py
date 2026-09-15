@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from typing import Any, Optional
 
-from .deployment import Deployment
+from hf_cloud.core.deployment import Deployment
 
 
 class StateManager:
@@ -52,51 +52,71 @@ class StateManager:
         with open(self.state_file, "w") as f:
             json.dump(self._state, f, indent=2)
 
+    @staticmethod
+    def _deployment_key(deployment_id: str, provider: str, region: Optional[str]) -> str:
+        """Scope endpoint names to their provider and region."""
+        return json.dumps([provider, region, deployment_id])
+
     def add_deployment(self, deployment: Deployment) -> None:
         """Add or update a deployment in state.
 
         Args:
             deployment: Deployment object to store
         """
-        self._state["deployments"][deployment.deployment_id] = deployment.to_dict()
+        key = self._deployment_key(deployment.deployment_id, deployment.provider, deployment.region)
+        self._state["deployments"][key] = deployment.to_dict()
         self._save_state()
 
-    def get_deployment(self, deployment_id: str) -> Optional[dict[str, Any]]:
+    def get_deployment(
+        self, deployment_id: str, *, provider: str, region: Optional[str] = None
+    ) -> Optional[dict[str, Any]]:
         """Get deployment from state.
 
         Args:
-            deployment_id: Unique deployment identifier
+            deployment_id: Endpoint identifier within the provider and region
+            provider: Cloud provider name
+            region: Deployment region
 
         Returns:
             Deployment dictionary or None if not found
         """
-        return self._state["deployments"].get(deployment_id)
+        key = self._deployment_key(deployment_id, provider, region)
+        return self._state["deployments"].get(key)
 
-    def get_deployment_object(self, deployment_id: str) -> Optional[Deployment]:
+    def get_deployment_object(
+        self, deployment_id: str, *, provider: str, region: Optional[str] = None
+    ) -> Optional[Deployment]:
         """Get deployment as a Deployment object.
 
         Args:
-            deployment_id: Unique deployment identifier
+            deployment_id: Endpoint identifier within the provider and region
+            provider: Cloud provider name
+            region: Deployment region
 
         Returns:
             Deployment object or None if not found
         """
-        data = self.get_deployment(deployment_id)
+        data = self.get_deployment(deployment_id, provider=provider, region=region)
         if data:
             return Deployment.from_dict(data)
         return None
 
-    def remove_deployment(self, deployment_id: str) -> bool:
+    def remove_deployment(
+        self, deployment_id: str, *, provider: str, region: Optional[str] = None
+    ) -> bool:
         """Remove deployment from state.
 
         Args:
-            deployment_id: Unique deployment identifier
+            deployment_id: Endpoint identifier within the provider and region
+            provider: Cloud provider name
+            region: Deployment region
 
         Returns:
             True if deployment was removed, False if not found
         """
-        if deployment_id in self._state["deployments"]:
-            del self._state["deployments"][deployment_id]
+        key = self._deployment_key(deployment_id, provider, region)
+        if key in self._state["deployments"]:
+            del self._state["deployments"][key]
             self._save_state()
             return True
         return False
@@ -127,18 +147,23 @@ class StateManager:
         deployments = self.list_deployments(provider)
         return [Deployment.from_dict(d) for d in deployments]
 
-    def update_deployment_status(self, deployment_id: str, status: str) -> bool:
+    def update_deployment_status(
+        self, deployment_id: str, status: str, *, provider: str, region: Optional[str] = None
+    ) -> bool:
         """Update the status of a deployment.
 
         Args:
-            deployment_id: Unique deployment identifier
+            deployment_id: Endpoint identifier within the provider and region
+            provider: Cloud provider name
+            region: Deployment region
             status: New status value
 
         Returns:
             True if updated, False if deployment not found
         """
-        if deployment_id in self._state["deployments"]:
-            self._state["deployments"][deployment_id]["status"] = status
+        key = self._deployment_key(deployment_id, provider, region)
+        if key in self._state["deployments"]:
+            self._state["deployments"][key]["status"] = status
             self._save_state()
             return True
         return False

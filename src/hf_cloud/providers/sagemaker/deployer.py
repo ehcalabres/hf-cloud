@@ -23,15 +23,13 @@ console = Console()
 class SageMakerDeployer:
     """Handles SageMaker deployment operations using ModelBuilder."""
 
-    def __init__(self, client: SageMakerClient, region: str = "us-east-1"):
+    def __init__(self, client: SageMakerClient):
         """Initialize deployer.
 
         Args:
             client: SageMaker client instance
-            region: Default AWS region
         """
         self.client = client
-        self.default_region = region
 
     def deploy(
         self,
@@ -56,7 +54,9 @@ class SageMakerDeployer:
         """
         # Extract config
         instance_type = config.get("instance_type")
-        region = config.get("region", self.default_region)
+        region = self.client.region
+        if config.get("region") and config["region"] != region:
+            raise DeploymentError("Deployment region must match the SageMaker client's region")
         role = config.get("role")
         instance_count = config.get("instance_count", 1)
 
@@ -78,7 +78,7 @@ class SageMakerDeployer:
             from sagemaker.serve.model_builder import ModelBuilder
 
             # Get SageMaker session and role
-            session = self.client.get_sagemaker_session(region=region)
+            session = self.client.get_sagemaker_session()
             role_arn = self.client.get_execution_role(role_name=role)
 
             # Get model task and schema builder

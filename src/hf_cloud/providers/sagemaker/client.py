@@ -5,7 +5,8 @@ from typing import Any, Optional
 
 from rich.console import Console
 
-from ...core.exceptions import AuthenticationError, ProviderError
+from hf_cloud.core.config import Config
+from hf_cloud.core.exceptions import AuthenticationError, ProviderError
 
 console = Console()
 
@@ -13,26 +14,43 @@ console = Console()
 class SageMakerClient:
     """Wrapper for AWS SageMaker and related clients."""
 
-    def __init__(self, region: str = "us-east-1"):
+    def __init__(self, region: Optional[str] = None):
         """Initialize SageMaker client.
 
         Args:
             region: AWS region
         """
-        self.region = region
+        self.region = self.resolve_region(region)
         self._sagemaker_client = None
         self._sagemaker_runtime_client = None
         self._logs_client = None
         self._iam_client = None
         self._session = None
 
-    def _get_boto3_session(self, region: str = None) -> Any:
-        """Get or create boto3 session."""
+    @staticmethod
+    def resolve_region(region: Optional[str] = None) -> str:
+        """Resolve explicit, HF-Cloud, AWS session, then fallback region."""
+        if region:
+            return region
+        configured = Config().get_provider_config("sagemaker").get("default_region")
+        if configured:
+            return configured
+        try:
+            import boto3
+        except ImportError:
+            raise ProviderError(
+                "sagemaker",
+                "boto3 is not installed. Install with: pip install hf-cloud[sagemaker]",
+            )
+        return boto3.Session().region_name or "us-east-1"
+
+    def _get_boto3_session(self) -> Any:
+        """Get or create the session for this client's region."""
         if self._session is None:
             try:
                 import boto3
 
-                self._session = boto3.Session(region_name=region or self.region)
+                self._session = boto3.Session(region_name=self.region)
             except ImportError:
                 raise ProviderError(
                     "sagemaker",
@@ -44,7 +62,7 @@ class SageMakerClient:
     def sagemaker(self) -> Any:
         """Get SageMaker client."""
         if self._sagemaker_client is None:
-            session = self._get_boto3_session(region=self.region)
+            session = self._get_boto3_session()
             self._sagemaker_client = session.client("sagemaker")
         return self._sagemaker_client
 
@@ -52,7 +70,7 @@ class SageMakerClient:
     def sagemaker_runtime(self) -> Any:
         """Get SageMaker Runtime client for inference."""
         if self._sagemaker_runtime_client is None:
-            session = self._get_boto3_session(region=self.region)
+            session = self._get_boto3_session()
             self._sagemaker_runtime_client = session.client("sagemaker-runtime")
         return self._sagemaker_runtime_client
 
@@ -60,7 +78,7 @@ class SageMakerClient:
     def logs(self) -> Any:
         """Get CloudWatch Logs client."""
         if self._logs_client is None:
-            session = self._get_boto3_session(region=self.region)
+            session = self._get_boto3_session()
             self._logs_client = session.client("logs")
         return self._logs_client
 
@@ -68,16 +86,13 @@ class SageMakerClient:
     def iam(self) -> Any:
         """Get IAM client."""
         if self._iam_client is None:
-            session = self._get_boto3_session(region=self.region)
+            session = self._get_boto3_session()
             self._iam_client = session.client("iam")
         return self._iam_client
 
-    def get_sagemaker_session(self, region: str = None) -> Any:
+    def get_sagemaker_session(self) -> Any:
         """
         Get SageMaker Session for high-level operations.
-
-        Args:
-            region: AWS region. Defaults to the client's region.
 
         Returns:
             SageMaker Session object
@@ -88,7 +103,7 @@ class SageMakerClient:
         try:
             from sagemaker.core.helper.session_helper import Session
 
-            boto_session = self._get_boto3_session(region=region or self.region)
+            boto_session = self._get_boto3_session()
             return Session(boto_session=boto_session)
         except ImportError:
             raise ProviderError(
@@ -137,9 +152,7 @@ class SageMakerClient:
         if role_name:
             # Try to find a SageMaker role by name or search for one
             try:
-                import boto3
-
-                iam = boto3.client("iam")
+                iam = self.iam
 
                 # If a role name was provided, try to get it
                 if role_name:
@@ -156,7 +169,7 @@ class SageMakerClient:
             try:
                 from sagemaker.core.helper.session_helper import get_execution_role
 
-                role = get_execution_role()
+                role = get_execution_role(sagemaker_session=self.get_sagemaker_session())
                 console.print(f"[green]Using SageMaker execution role: {role}[/green]")
                 return role
             except Exception:
@@ -164,9 +177,7 @@ class SageMakerClient:
 
             # Try to find a SageMaker role by name or search for one
             try:
-                import boto3
-
-                iam = boto3.client("iam")
+                iam = self.iam
 
                 # If a role name was provided, try to get it
                 if role_name:

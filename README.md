@@ -155,6 +155,21 @@ You can configure some default settings for your cloud provider. This step is op
 
 ### AWS SageMaker
 
+Every SageMaker endpoint command accepts `--region` (`-r`). Region selection uses
+the command option, then the HF-Cloud `default_region` setting, then the AWS
+session's region (environment or selected AWS profile), and finally `us-east-1`.
+Use the deployment's region when checking, invoking, or deleting its endpoint:
+
+```bash
+<cli> sagemaker status my-gpt2-endpoint --region eu-west-1
+<cli> sagemaker ls --region eu-west-1
+<cli> sagemaker delete my-gpt2-endpoint --region eu-west-1
+```
+
+Local state distinguishes deployments by provider, region, and endpoint ID.
+`<cli> ls --refresh` refreshes SageMaker endpoints in the default region and all
+SageMaker regions recorded in local state.
+
 ```bash
 # Configure (optional)
 <cli> providers configure sagemaker

@@ -1,8 +1,8 @@
 """Core module for HF-Cloud."""
 
-from .config import Config
-from .deployment import Deployment, DeploymentStatus
-from .exceptions import (
+from hf_cloud.core.config import Config
+from hf_cloud.core.deployment import Deployment, DeploymentStatus
+from hf_cloud.core.exceptions import (
     AuthenticationError,
     ConfigurationError,
     DeploymentError,
@@ -11,7 +11,7 @@ from .exceptions import (
     ProviderError,
     ProviderNotFoundError,
 )
-from .state import StateManager
+from hf_cloud.core.state import StateManager
 
 __all__ = [
     "Config",
