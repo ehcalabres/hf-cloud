@@ -19,7 +19,7 @@ class AzureProvider(CloudProvider):
         except ImportError:
             raise ProviderError(
                 "azure",
-                "Azure ML SDK is not installed. Install with: pip install hf-cloud[azure]",
+                "Azure ML support is not yet implemented",
             )
 
     def get_provider_name(self) -> str:

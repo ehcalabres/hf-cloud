@@ -40,7 +40,7 @@ class VertexClient:
         except ImportError:
             raise ProviderError(
                 "vertex",
-                "Google Cloud AI Platform SDK is not installed. Install with: pip install hf-cloud[vertex]",
+                "Google Cloud AI Platform SDK is not installed. Install with: pip install --upgrade hf-cloud",
             )
 
     def get_project(self) -> str:

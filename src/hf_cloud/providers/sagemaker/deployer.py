@@ -139,7 +139,7 @@ class SageMakerDeployer:
         except ImportError:
             raise DeploymentError(
                 "SageMaker SDK is not installed",
-                details="Install with: pip install hf-cloud[sagemaker]",
+                details="Install with: pip install --upgrade hf-cloud",
             )
         except Exception as e:
             raise DeploymentError(

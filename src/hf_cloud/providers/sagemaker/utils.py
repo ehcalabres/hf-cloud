@@ -28,7 +28,7 @@ def get_schema_builder_from_model(model_id: str, task: str) -> "SchemaBuilder":
     except ImportError:
         raise ProviderError(
             "sagemaker",
-            "SageMaker SDK is not installed. Install with: pip install hf-cloud[sagemaker]",
+            "SageMaker SDK is not installed. Install with: pip install --upgrade hf-cloud",
         )
 
     # Define sample inputs/outputs based on task

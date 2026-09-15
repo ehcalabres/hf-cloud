@@ -13,6 +13,9 @@ Preferred method: install and run it as an HF CLI extension (`hf cloud ...`). Mo
 
 In the examples below, replace `<cli>` with either `hf-cloud` or `hf cloud`.
 
+Both installation modes include the AWS SageMaker and Google Cloud Vertex AI
+dependencies by default. Azure ML is not yet implemented.
+
 ## Hugging Face CLI extension
 
 This project is packaged as a Python `hf` CLI extension. It can be discovered and installed using the following commands:
@@ -38,20 +41,11 @@ hf cloud sagemaker ls
 git clone https://github.com/ehcalabres/hf-cloud.git
 cd hf-cloud
 
-# Install base CLI
+# Install the CLI with SageMaker and Vertex AI support
 pip install -e .
 
-# Install with SageMaker support
-pip install -e ".[sagemaker]"
-
-# Install with Vertex AI support
-pip install -e ".[vertex]"
-
-# Install with all providers
-pip install -e ".[all]"
-
 # Install with development dependencies
-pip install -e ".[dev]"
+uv sync --group dev
 ```
 
 ## Agent Skills
@@ -241,13 +235,15 @@ You will also need to have the respective cloud provider authentication set up, 
 
 ## Development
 
+Development dependencies require Python 3.10 or newer; `.python-version` selects Python 3.12.
+
 ```bash
 # Install dev dependencies
-pip install -e ".[dev]"
+uv sync --group dev
 
 # Run tests
-pytest
+uv run pytest
 
 # Run linting
-ruff check src/
+uv run ruff check src tests
 ```
