@@ -157,7 +157,7 @@ class VertexDeployer:
         except ImportError:
             raise DeploymentError(
                 "Google Cloud AI Platform SDK is not installed",
-                details="Install with: pip install hf-cloud[vertex]",
+                details="Install with: pip install --upgrade hf-cloud",
             )
         except Exception as e:
             raise DeploymentError(

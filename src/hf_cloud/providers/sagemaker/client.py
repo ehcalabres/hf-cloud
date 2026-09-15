@@ -40,7 +40,7 @@ class SageMakerClient:
         except ImportError:
             raise ProviderError(
                 "sagemaker",
-                "boto3 is not installed. Install with: pip install hf-cloud[sagemaker]",
+                "boto3 is not installed. Install with: pip install --upgrade hf-cloud",
             )
         return boto3.Session().region_name or "us-east-1"
 
@@ -54,7 +54,7 @@ class SageMakerClient:
             except ImportError:
                 raise ProviderError(
                     "sagemaker",
-                    "boto3 is not installed. Install with: pip install hf-cloud[sagemaker]",
+                    "boto3 is not installed. Install with: pip install --upgrade hf-cloud",
                 )
         return self._session
 
@@ -108,7 +108,7 @@ class SageMakerClient:
         except ImportError:
             raise ProviderError(
                 "sagemaker",
-                "sagemaker SDK is not installed. Install with: pip install hf-cloud[sagemaker]",
+                "sagemaker SDK is not installed. Install with: pip install --upgrade hf-cloud",
             )
 
     def verify_credentials(self) -> bool:
