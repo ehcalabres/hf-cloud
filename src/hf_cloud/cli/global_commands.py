@@ -32,7 +32,28 @@ def list_all_deployments(
 
     if refresh:
         console.print("[dim]Refreshing deployment status from cloud providers...[/dim]")
-        for provider_name in ProviderRegistry.list_providers():
+        provider_names = [provider] if provider else ProviderRegistry.list_providers()
+        for provider_name in provider_names:
+            if provider_name == "sagemaker":
+                from hf_cloud.providers.sagemaker import SageMakerProvider
+                from hf_cloud.providers.sagemaker.client import SageMakerClient
+
+                regions = {
+                    d["region"] for d in state.list_deployments(provider="sagemaker") if d.get("region")
+                }
+                try:
+                    regions.add(SageMakerClient.resolve_region())
+                except Exception as e:
+                    console.print(f"  [yellow]⚠[/yellow] sagemaker default region: {e}")
+                for region in sorted(regions):
+                    try:
+                        regional_provider = SageMakerProvider(region=region)
+                        for deployment in regional_provider.list_deployments():
+                            state.add_deployment(deployment)
+                        console.print(f"  [green]✓[/green] sagemaker ({region})")
+                    except Exception as e:
+                        console.print(f"  [yellow]⚠[/yellow] sagemaker ({region}): {e}")
+                continue
             try:
                 provider_obj = ProviderRegistry.get_provider(provider_name)
                 remote_deployments = provider_obj.list_deployments()

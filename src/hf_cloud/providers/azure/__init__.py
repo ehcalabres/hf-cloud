@@ -3,9 +3,9 @@
 
 from typing import Any, Optional
 
-from ...core.deployment import Deployment, DeploymentStatus
-from ...core.exceptions import ProviderError
-from ..base import CloudProvider
+from hf_cloud.core.deployment import Deployment, DeploymentStatus
+from hf_cloud.core.exceptions import ProviderError
+from hf_cloud.providers.base import CloudProvider
 
 
 class AzureProvider(CloudProvider):

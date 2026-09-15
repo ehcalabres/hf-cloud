@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional, TypedDict
 
-from ..core.exceptions import HFCloudError
+from hf_cloud.core.exceptions import HFCloudError
 
 
 class HfMemError(HFCloudError):

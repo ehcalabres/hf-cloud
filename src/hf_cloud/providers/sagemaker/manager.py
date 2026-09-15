@@ -5,9 +5,9 @@ import json
 from datetime import datetime
 from typing import Any, Optional
 
-from ...core.deployment import Deployment, DeploymentStatus
-from ...core.exceptions import DeploymentError, DeploymentNotFoundError, ProviderError
-from .client import SageMakerClient
+from hf_cloud.core.deployment import Deployment, DeploymentStatus
+from hf_cloud.core.exceptions import DeploymentError, DeploymentNotFoundError, ProviderError
+from hf_cloud.providers.sagemaker.client import SageMakerClient
 
 # Map SageMaker endpoint statuses to DeploymentStatus
 STATUS_MAP = {
@@ -37,11 +37,13 @@ class SageMakerManager:
         """List SageMaker endpoints.
 
         Args:
-            filters: Optional filters (status, region)
+            filters: Optional filters (status, region). Region must match this client.
 
         Returns:
             List of Deployment objects
         """
+        if filters and filters.get("region") and filters["region"] != self.client.region:
+            raise ProviderError("sagemaker", "List region must match the SageMaker client's region")
         try:
             # List all endpoints
             paginator = self.client.sagemaker.get_paginator("list_endpoints")

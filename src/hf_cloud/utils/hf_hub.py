@@ -3,7 +3,7 @@
 
 from typing import Any, Optional
 
-from ..core.exceptions import HFCloudError
+from hf_cloud.core.exceptions import HFCloudError
 
 
 def get_model_info(model_id: str, token: Optional[str] = None) -> dict[str, Any]:

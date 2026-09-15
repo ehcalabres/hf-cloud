@@ -201,11 +201,12 @@ def delete(
         console.print(f"[yellow]Deleting deployment {deployment_id}...[/yellow]")
 
         provider = ProviderRegistry.get_provider("vertex")
+        deployment = provider.get_deployment(deployment_id)
         provider.delete_deployment(deployment_id)
 
         # Remove from local state
         state = StateManager()
-        state.remove_deployment(deployment_id)
+        state.remove_deployment(deployment.deployment_id, provider="vertex", region=deployment.region)
 
         console.print(f"[bold green]Deployment '{deployment_id}' deleted successfully.[/bold green]")
 

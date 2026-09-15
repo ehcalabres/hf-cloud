@@ -8,11 +8,11 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from ..core.config import Config
-from ..core.exceptions import DeploymentNotFoundError, ProviderError
-from ..core.state import StateManager
-from ..providers.registry import ProviderRegistry
-from ..providers.sagemaker.utils import _decode_ansi_logs
+from hf_cloud.core.config import Config
+from hf_cloud.core.exceptions import DeploymentNotFoundError, ProviderError
+from hf_cloud.core.state import StateManager
+from hf_cloud.providers.sagemaker import SageMakerProvider
+from hf_cloud.providers.sagemaker.utils import _decode_ansi_logs
 
 console = Console()
 sagemaker_app = typer.Typer(help="AWS SageMaker deployment management.")
@@ -23,7 +23,6 @@ def _get_provider_defaults() -> dict[str, Optional[str]]:
     config = Config()
     provider_config = config.get_provider_config("sagemaker")
     return {
-        "region": provider_config.get("default_region"),
         "role": provider_config.get("default_role"),
         "instance_type": provider_config.get("default_instance_type"),
     }
@@ -50,18 +49,17 @@ def deploy(
     defaults = _get_provider_defaults()
 
     # Use provided values or fall back to config defaults, then hardcoded defaults
-    effective_region = region or defaults.get("region") or "us-east-1"
     effective_role = role or defaults.get("role")
     effective_instance_type = instance_type or defaults.get("instance_type") or "ml.g5.xlarge"
 
     console.print(f"[bold blue]Deploying {model_id} to AWS SageMaker...[/bold blue]")
 
     try:
-        provider = ProviderRegistry.get_provider("sagemaker")
+        provider = SageMakerProvider(region=region)
 
         config = {
             "instance_type": effective_instance_type,
-            "region": effective_region,
+            "region": provider.client.region,
             "role": effective_role,
             "instance_count": instance_count,
         }
@@ -87,7 +85,7 @@ def deploy(
         console.print(f"  [cyan]Instance Count:[/cyan] {deployment.instance_count}")
         console.print()
         console.print("[dim]Note: Endpoint creation may take 5-10 minutes. Check status with:[/dim]")
-        console.print(f"[dim]  hf-cloud sagemaker status {deployment.deployment_id}[/dim]")
+        console.print(f"[dim]  hf-cloud sagemaker status {deployment.deployment_id} --region {deployment.region}[/dim]")
 
     except ProviderError as e:
         console.print(f"[bold red]Error:[/bold red] {e}")
@@ -99,18 +97,16 @@ def deploy(
 
 @sagemaker_app.command(name="ls")
 def list_deployments(
-    region: Annotated[Optional[str], typer.Option("--region", "-r", help="Filter by region")] = None,
+    region: Annotated[Optional[str], typer.Option("--region", "-r", help="AWS region")] = None,
     status: Annotated[
         Optional[str], typer.Option("--status", "-s", help="Filter by status (running, creating, failed)")
     ] = None,
 ) -> None:
     """List all SageMaker deployments."""
     try:
-        provider = ProviderRegistry.get_provider("sagemaker")
+        provider = SageMakerProvider(region=region)
 
         filters = {}
-        if region:
-            filters["region"] = region
         if status:
             filters["status"] = status
 
@@ -147,10 +143,11 @@ def list_deployments(
 @sagemaker_app.command(name="describe")
 def describe(
     deployment_id: Annotated[str, typer.Argument(help="Deployment/endpoint name")],
+    region: Annotated[Optional[str], typer.Option("--region", "-r", help="AWS region")] = None,
 ) -> None:
     """Show detailed information about a deployment."""
     try:
-        provider = ProviderRegistry.get_provider("sagemaker")
+        provider = SageMakerProvider(region=region)
         deployment = provider.get_deployment(deployment_id)
 
         console.print()
@@ -186,23 +183,25 @@ def describe(
 def delete(
     deployment_id: Annotated[str, typer.Argument(help="Deployment/endpoint name")],
     force: Annotated[bool, typer.Option("--force", "-f", help="Skip confirmation prompt")] = False,
+    region: Annotated[Optional[str], typer.Option("--region", "-r", help="AWS region")] = None,
 ) -> None:
     """Delete a SageMaker deployment."""
-    if not force:
-        confirm = typer.confirm(f"Are you sure you want to delete deployment '{deployment_id}'?")
-        if not confirm:
-            console.print("[dim]Cancelled.[/dim]")
-            raise typer.Abort()
-
     try:
-        console.print(f"[yellow]Deleting deployment {deployment_id}...[/yellow]")
+        provider = SageMakerProvider(region=region)
+        if not force:
+            confirm = typer.confirm(
+                f"Are you sure you want to delete deployment '{deployment_id}' in '{provider.client.region}'?"
+            )
+            if not confirm:
+                console.print("[dim]Cancelled.[/dim]")
+                raise typer.Abort()
 
-        provider = ProviderRegistry.get_provider("sagemaker")
+        console.print(f"[yellow]Deleting deployment {deployment_id} in {provider.client.region}...[/yellow]")
         provider.delete_deployment(deployment_id)
 
         # Remove from local state
         state = StateManager()
-        state.remove_deployment(deployment_id)
+        state.remove_deployment(deployment_id, provider="sagemaker", region=provider.client.region)
 
         console.print(f"[bold green]Deployment '{deployment_id}' deleted successfully.[/bold green]")
 
@@ -217,10 +216,11 @@ def delete(
 @sagemaker_app.command(name="status")
 def status(
     deployment_id: Annotated[str, typer.Argument(help="Deployment/endpoint name")],
+    region: Annotated[Optional[str], typer.Option("--region", "-r", help="AWS region")] = None,
 ) -> None:
     """Check the status of a deployment."""
     try:
-        provider = ProviderRegistry.get_provider("sagemaker")
+        provider = SageMakerProvider(region=region)
         deployment_status = provider.get_status(deployment_id)
 
         status_colors = {
@@ -248,10 +248,11 @@ def logs(
     deployment_id: Annotated[str, typer.Argument(help="Deployment/endpoint name")],
     tail: Annotated[int, typer.Option("--tail", "-n", help="Number of log lines to show")] = 100,
     raw: Annotated[bool, typer.Option("--raw", help="Show raw logs without ANSI code processing")] = False,
+    region: Annotated[Optional[str], typer.Option("--region", "-r", help="AWS region")] = None,
 ) -> None:
     """View deployment logs from CloudWatch."""
     try:
-        provider = ProviderRegistry.get_provider("sagemaker")
+        provider = SageMakerProvider(region=region)
         log_output = provider.get_logs(deployment_id, tail)
 
         if log_output:
@@ -275,10 +276,11 @@ def invoke(
     deployment_id: Annotated[str, typer.Argument(help="Deployment/endpoint name")],
     input_text: Annotated[str, typer.Option("--input", "-i", help="Input text for inference")],
     max_new_tokens: Annotated[int, typer.Option("--max-tokens", help="Maximum tokens to generate")] = 100,
+    region: Annotated[Optional[str], typer.Option("--region", "-r", help="AWS region")] = None,
 ) -> None:
     """Test inference on the deployment."""
     try:
-        provider = ProviderRegistry.get_provider("sagemaker")
+        provider = SageMakerProvider(region=region)
 
         payload = {
             "inputs": input_text,
@@ -321,7 +323,7 @@ def estimate(
     """
     import json
 
-    from ..utils.hf_mem import (
+    from hf_cloud.utils.hf_mem import (
         HfMemError,
         _get_total_vram,
         find_compatible_instances,

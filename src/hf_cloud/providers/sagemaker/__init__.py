@@ -3,11 +3,11 @@
 
 from typing import Any, Optional
 
-from ...core.deployment import Deployment, DeploymentStatus
-from ..base import CloudProvider
-from .client import SageMakerClient
-from .deployer import SageMakerDeployer
-from .manager import SageMakerManager
+from hf_cloud.core.deployment import Deployment, DeploymentStatus
+from hf_cloud.providers.base import CloudProvider
+from hf_cloud.providers.sagemaker.client import SageMakerClient
+from hf_cloud.providers.sagemaker.deployer import SageMakerDeployer
+from hf_cloud.providers.sagemaker.manager import SageMakerManager
 
 
 class SageMakerProvider(CloudProvider):
@@ -17,11 +17,10 @@ class SageMakerProvider(CloudProvider):
         """Initialize SageMaker provider.
 
         Args:
-            region: AWS region. Defaults to us-east-1.
+            region: AWS region. Defaults to HF-Cloud configuration, then the AWS session.
         """
-        self.default_region = region or "us-east-1"
-        self.client = SageMakerClient(region=self.default_region)
-        self.deployer = SageMakerDeployer(client=self.client, region=self.default_region)
+        self.client = SageMakerClient(region=region)
+        self.deployer = SageMakerDeployer(client=self.client)
         self.manager = SageMakerManager(self.client)
 
     def get_provider_name(self) -> str:

@@ -47,29 +47,41 @@ class TestStateManager:
         """Test adding a deployment."""
         state_manager.add_deployment(sample_deployment)
 
-        stored = state_manager.get_deployment(sample_deployment.deployment_id)
+        stored = state_manager.get_deployment(
+            sample_deployment.deployment_id,
+            provider=sample_deployment.provider,
+            region=sample_deployment.region,
+        )
         assert stored is not None
         assert stored["deployment_id"] == sample_deployment.deployment_id
         assert stored["model_id"] == "gpt2"
 
     def test_get_nonexistent_deployment(self, state_manager):
         """Test getting a deployment that doesn't exist."""
-        result = state_manager.get_deployment("nonexistent-id")
+        result = state_manager.get_deployment("nonexistent-id", provider="sagemaker", region="us-east-1")
         assert result is None
 
     def test_remove_deployment(self, state_manager, sample_deployment):
         """Test removing a deployment."""
         state_manager.add_deployment(sample_deployment)
 
-        result = state_manager.remove_deployment(sample_deployment.deployment_id)
+        result = state_manager.remove_deployment(
+            sample_deployment.deployment_id,
+            provider=sample_deployment.provider,
+            region=sample_deployment.region,
+        )
         assert result is True
 
-        stored = state_manager.get_deployment(sample_deployment.deployment_id)
+        stored = state_manager.get_deployment(
+            sample_deployment.deployment_id,
+            provider=sample_deployment.provider,
+            region=sample_deployment.region,
+        )
         assert stored is None
 
     def test_remove_nonexistent_deployment(self, state_manager):
         """Test removing a deployment that doesn't exist."""
-        result = state_manager.remove_deployment("nonexistent-id")
+        result = state_manager.remove_deployment("nonexistent-id", provider="sagemaker", region="us-east-1")
         assert result is False
 
     def test_list_deployments(self, state_manager):
@@ -128,11 +140,18 @@ class TestStateManager:
         state_manager.add_deployment(sample_deployment)
 
         result = state_manager.update_deployment_status(
-            sample_deployment.deployment_id, "stopped"
+            sample_deployment.deployment_id,
+            "stopped",
+            provider=sample_deployment.provider,
+            region=sample_deployment.region,
         )
         assert result is True
 
-        stored = state_manager.get_deployment(sample_deployment.deployment_id)
+        stored = state_manager.get_deployment(
+            sample_deployment.deployment_id,
+            provider=sample_deployment.provider,
+            region=sample_deployment.region,
+        )
         assert stored["status"] == "stopped"
 
     def test_persistence(self, temp_state_file, sample_deployment):
@@ -145,7 +164,11 @@ class TestStateManager:
         manager2 = StateManager(state_file=temp_state_file)
 
         # Should see the same deployment
-        stored = manager2.get_deployment(sample_deployment.deployment_id)
+        stored = manager2.get_deployment(
+            sample_deployment.deployment_id,
+            provider=sample_deployment.provider,
+            region=sample_deployment.region,
+        )
         assert stored is not None
         assert stored["deployment_id"] == sample_deployment.deployment_id
 
@@ -161,7 +184,11 @@ class TestStateManager:
         """Test getting deployment as Deployment object."""
         state_manager.add_deployment(sample_deployment)
 
-        deployment = state_manager.get_deployment_object(sample_deployment.deployment_id)
+        deployment = state_manager.get_deployment_object(
+            sample_deployment.deployment_id,
+            provider=sample_deployment.provider,
+            region=sample_deployment.region,
+        )
         assert deployment is not None
         assert isinstance(deployment, Deployment)
         assert deployment.deployment_id == sample_deployment.deployment_id

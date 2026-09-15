@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 from hf_cloud.core.exceptions import ProviderNotFoundError
 
 if TYPE_CHECKING:
-    from .base import CloudProvider
+    from hf_cloud.providers.base import CloudProvider
 
 
 class ProviderRegistry:
@@ -83,21 +83,21 @@ class ProviderRegistry:
         """
         if name == "sagemaker":
             try:
-                from .sagemaker import SageMakerProvider
+                from hf_cloud.providers.sagemaker import SageMakerProvider
 
                 cls._providers[name] = SageMakerProvider()
             except ImportError as e:
                 raise ProviderNotFoundError(name) from e
         elif name == "azure":
             try:
-                from .azure import AzureProvider
+                from hf_cloud.providers.azure import AzureProvider
 
                 cls._providers[name] = AzureProvider()
             except ImportError as e:
                 raise ProviderNotFoundError(name) from e
         elif name == "vertex":
             try:
-                from .vertex import VertexProvider
+                from hf_cloud.providers.vertex import VertexProvider
 
                 provider = VertexProvider()
                 # Register under both names for convenience
