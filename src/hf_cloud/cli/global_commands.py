@@ -48,8 +48,7 @@ def list_all_deployments(
                 for region in sorted(regions):
                     try:
                         regional_provider = SageMakerProvider(region=region)
-                        for deployment in regional_provider.list_deployments():
-                            state.add_deployment(deployment)
+                        state.add_deployments(regional_provider.list_deployments())
                         console.print(f"  [green]✓[/green] sagemaker ({region})")
                     except Exception as e:
                         console.print(f"  [yellow]⚠[/yellow] sagemaker ({region}): {e}")
@@ -57,8 +56,7 @@ def list_all_deployments(
             try:
                 provider_obj = ProviderRegistry.get_provider(provider_name)
                 remote_deployments = provider_obj.list_deployments()
-                for deployment in remote_deployments:
-                    state.add_deployment(deployment)
+                state.add_deployments(remote_deployments)
                 console.print(f"  [green]✓[/green] {provider_name}")
             except Exception as e:
                 console.print(f"  [yellow]⚠[/yellow] {provider_name}: {e}")

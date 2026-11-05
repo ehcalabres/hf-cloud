@@ -2,6 +2,7 @@
 """HF-Mem integration for VRAM estimation."""
 
 import json
+import math
 import os
 import subprocess
 from dataclasses import dataclass
@@ -106,6 +107,9 @@ def run_hf_mem(model_id: str, timeout: int = 120) -> HfMemEstimate:
             )
 
         payload = json.loads(raw_output)
+        if not isinstance(payload, dict):
+            raise HfMemError(f"Invalid memory output from hf-mem for {model_id}", details="Expected a JSON object")
+
         bytes_count = payload.get("bytes_count")
         if bytes_count is None:
             # Newer hf-mem JSON output may expose `total_memory`/`memory`
@@ -118,12 +122,26 @@ def run_hf_mem(model_id: str, timeout: int = 120) -> HfMemEstimate:
                 details=f"Output: {raw_output}",
             )
 
-        required_vram_gb = _bytes_to_gb(float(bytes_count))
+        try:
+            numeric_bytes = float(bytes_count)
+            if isinstance(bytes_count, bool) or not math.isfinite(numeric_bytes) or numeric_bytes < 0:
+                raise ValueError
+            parsed_bytes = int(bytes_count)
+            # Keep large integer values exact while rejecting fractional floats.
+            if not isinstance(bytes_count, (int, str)) and parsed_bytes != numeric_bytes:
+                raise ValueError
+        except (TypeError, ValueError, OverflowError):
+            raise HfMemError(
+                f"Invalid memory bytes from hf-mem for {model_id}",
+                details="Expected a finite, non-negative whole number of bytes",
+            ) from None
+
+        required_vram_gb = _bytes_to_gb(parsed_bytes)
 
         return HfMemEstimate(
             model_id=model_id,
             required_vram_gb=required_vram_gb,
-            bytes_count=bytes_count,
+            bytes_count=parsed_bytes,
             raw=payload,
         )
 
@@ -180,6 +198,19 @@ def load_instance_data(provider: str) -> InstanceData:
         )
 
 
+def validate_safety_margin(safety_margin: float) -> None:
+    """Reject margins that cannot represent a fraction of reserved VRAM."""
+    if not math.isfinite(safety_margin) or not 0 <= safety_margin < 1:
+        raise HfMemError("Safety margin must be finite and satisfy 0 <= margin < 1")
+
+
+def _minimum_vram(required_vram_gb: float, safety_margin: float) -> float:
+    validate_safety_margin(safety_margin)
+    if not math.isfinite(required_vram_gb) or required_vram_gb < 0:
+        raise HfMemError("Required VRAM must be finite and non-negative")
+    return required_vram_gb / (1 - safety_margin)
+
+
 def find_minimum_instance(
     required_vram_gb: float,
     instances: list[InstanceInfo],
@@ -195,20 +226,12 @@ def find_minimum_instance(
     Returns:
         Minimum viable instance or None if no suitable instance found
     """
-    # Calculate required VRAM accounting for safety margin
-    # If safety_margin is 0.1, we need VRAM where required <= VRAM * 0.9
-    # So VRAM >= required / 0.9
-    min_required_vram = required_vram_gb / (1 - safety_margin) if safety_margin < 1 else float("inf")
-
-    # Sort by total VRAM (ascending) to find minimum
-    sorted_instances = sorted(instances, key=_get_total_vram)
-
-    for instance in sorted_instances:
-        total_vram = _get_total_vram(instance)
-        if total_vram >= min_required_vram:
-            return instance
-
-    return None
+    min_required_vram = _minimum_vram(required_vram_gb, safety_margin)
+    return min(
+        (inst for inst in instances if _get_total_vram(inst) >= min_required_vram),
+        key=_get_total_vram,
+        default=None,
+    )
 
 
 def find_compatible_instances(
@@ -227,7 +250,7 @@ def find_compatible_instances(
         List of compatible instances sorted by total VRAM (ascending)
     """
     # Calculate required VRAM accounting for safety margin
-    min_required_vram = required_vram_gb / (1 - safety_margin) if safety_margin < 1 else float("inf")
+    min_required_vram = _minimum_vram(required_vram_gb, safety_margin)
 
     compatible = [inst for inst in instances if _get_total_vram(inst) >= min_required_vram]
 

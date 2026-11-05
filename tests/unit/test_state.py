@@ -1,7 +1,9 @@
 """Tests for state management."""
 
 import tempfile
+from dataclasses import replace
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 
@@ -192,3 +194,46 @@ class TestStateManager:
         assert deployment is not None
         assert isinstance(deployment, Deployment)
         assert deployment.deployment_id == sample_deployment.deployment_id
+
+
+def test_batch_updates_save_once_and_preserve_other_scopes(state_manager, sample_deployment, monkeypatch):
+    state_manager.add_deployment(sample_deployment)
+    save = Mock(wraps=state_manager._save_state)
+    monkeypatch.setattr(state_manager, "_save_state", save)
+    deployments = [
+        replace(sample_deployment, status=DeploymentStatus.STOPPED),
+        replace(sample_deployment, region="eu-west-1"),
+        replace(sample_deployment, provider="vertex", region="us-central1"),
+    ]
+    state_manager.add_deployments(deployment for deployment in deployments)
+    save.assert_called_once_with()
+    reloaded = StateManager(state_manager.state_file)
+    assert len(reloaded.list_deployments()) == 3
+    for deployment in deployments:
+        assert reloaded.get_deployment_object(
+            deployment.deployment_id, provider=deployment.provider, region=deployment.region
+        ) == deployment
+
+    # A later partial refresh retains deployments from other regions/providers.
+    state_manager.add_deployments([sample_deployment])
+    assert len(state_manager.list_deployments()) == 3
+
+
+def test_empty_batch_does_not_write(state_manager, monkeypatch):
+    save = Mock()
+    monkeypatch.setattr(state_manager, "_save_state", save)
+    state_manager.add_deployments(iter([]))
+    save.assert_not_called()
+
+
+def test_failing_batch_iteration_does_not_partially_update(state_manager, sample_deployment, monkeypatch):
+    def deployments():
+        yield sample_deployment
+        raise RuntimeError("Listing failed")
+
+    save = Mock()
+    monkeypatch.setattr(state_manager, "_save_state", save)
+    with pytest.raises(RuntimeError, match="Listing failed"):
+        state_manager.add_deployments(deployments())
+    assert state_manager.list_deployments() == []
+    save.assert_not_called()

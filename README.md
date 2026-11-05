@@ -115,6 +115,12 @@ You can configure some default settings for your cloud provider. This step is op
 <cli> vertex estimate meta-llama/Llama-2-7b-hf
 ```
 
+Both estimate commands accept `--safety-margin` as the fraction of VRAM to
+reserve, from `0` (inclusive) to `1` (exclusive). For example,
+`--safety-margin 0.2` keeps 20% free. Without this option, the provider's bundled
+instance catalog supplies the default. Use `--json` for machine-readable results
+or `--all` to show all compatible instances.
+
 ### 7. Delete deployment
 
 ```bash
@@ -163,6 +169,10 @@ Use the deployment's region when checking, invoking, or deleting its endpoint:
 Local state distinguishes deployments by provider, region, and endpoint ID.
 `<cli> ls --refresh` refreshes SageMaker endpoints in the default region and all
 SageMaker regions recorded in local state.
+
+Refresh saves each provider or region's results in a single batch. Local state
+and configuration files are replaced atomically to avoid partial JSON files if
+a write fails. Simultaneous CLI processes are not coordinated by a file lock.
 
 ```bash
 # Configure (optional)
