@@ -1,5 +1,4 @@
-
-"""HF-Mem integration for VRAM estimation."""
+"""Pinned hf-mem v1 adapter and instance catalog helpers."""
 
 import json
 import math
@@ -11,21 +10,80 @@ from typing import Any, Optional, TypedDict
 
 from hf_cloud.core.exceptions import HFCloudError
 
+# The v1 release is still pending. Use the exact reviewed source until its release
+# is validated; a moving branch or unversioned uvx package can break the contract.
+HF_MEM_REVISION = "2448e7c6457949951495b6dba2f01ac3bebdf36a"
+HF_MEM_SOURCE = f"git+https://github.com/alvarobartt/hf-mem.git@{HF_MEM_REVISION}"
+HF_MEM_VERSION = "hf-mem@1.0.0"
+
 
 class HfMemError(HFCloudError):
     """Error running hf-mem estimation."""
 
-    pass
+
+@dataclass(frozen=True)
+class EstimateOptions:
+    """Workload and weight selection passed unchanged to hf-mem."""
+
+    revision: Optional[str] = None
+    file: Optional[str] = None
+    format: Optional[str] = None
+    max_model_len: Optional[int] = None
+    batch_size: int = 1
+    kv_cache_dtype: str = "auto"
+    max_num_batched_tokens: Optional[int] = None
+
+    def validate(self) -> None:
+        for name in ("max_model_len", "batch_size", "max_num_batched_tokens"):
+            value = getattr(self, name)
+            if (name == "batch_size" or value is not None) and (type(value) is not int or value < 1):
+                raise HfMemError(f"--{name.replace('_', '-')} must be a positive integer")
+        if self.format not in (None, "safetensors", "gguf", "onnx"):
+            raise HfMemError("--format must be safetensors, gguf, or onnx")
+        if not self.kv_cache_dtype:
+            raise HfMemError("--kv-cache-dtype cannot be empty")
+
+    def command_args(self) -> list[str]:
+        self.validate()
+        args = []
+        for name in (
+            "revision",
+            "file",
+            "format",
+            "max_model_len",
+            "batch_size",
+            "kv_cache_dtype",
+            "max_num_batched_tokens",
+        ):
+            value = getattr(self, name)
+            if value is not None:
+                args.extend([f"--{name.replace('_', '-')}", str(value)])
+        return args
+
+
+@dataclass(frozen=True)
+class GpuFit:
+    """Upstream's fit assessment for a specific GPU layout."""
+
+    fits: bool
+    required_bytes: int
+    gpu_count: int
+    memory_per_gpu_bytes: int
+    needed_gpu_count: Optional[int]
+    max_model_len: int
 
 
 @dataclass(frozen=True)
 class HfMemEstimate:
-    """Result from hf-mem VRAM estimation."""
+    """Single-model estimate; totals exclude CPU-offloaded weights."""
 
     model_id: str
-    required_vram_gb: float
+    required_vram_gb: float  # GiB; retain the existing Python attribute name.
     bytes_count: int
     raw: dict[str, Any]
+    fit: Optional[GpuFit] = None
+    warnings: tuple[str, ...] = ()
+    cpu_memory_bytes: int = 0
 
 
 class InstanceInfo(TypedDict, total=False):
@@ -36,12 +94,12 @@ class InstanceInfo(TypedDict, total=False):
     gpuMemGbPerGpu: float
     startupTimeoutSeconds: int
     pricePerHourUsd: float
-    acceleratorType: str  # Vertex AI only
+    acceleratorType: str
 
 
 @dataclass
 class InstanceData:
-    """Container for instance data from JSON file."""
+    """Container for a bundled instance catalog."""
 
     provider: str
     instances: list[InstanceInfo]
@@ -49,117 +107,129 @@ class InstanceData:
 
 
 def _bytes_to_gb(n_bytes: float) -> float:
-    """Convert bytes to gigabytes."""
+    """Convert bytes to GiB (the historical function name is retained)."""
     return n_bytes / (1024.0**3)
 
 
 def _get_total_vram(instance: InstanceInfo) -> float:
-    """Calculate total VRAM for an instance."""
+    """Calculate aggregate GPU memory in GiB."""
     return instance.get("numGpu", 0) * instance.get("gpuMemGbPerGpu", 0)
 
 
 def _run_command(
     cmd: list[str], *, env: Optional[dict[str, str]] = None, timeout_s: int = 120
 ) -> subprocess.CompletedProcess[str]:
-    """Run a command and return the result."""
     merged_env = os.environ.copy()
     if env:
         merged_env.update(env)
-    return subprocess.run(
-        cmd,
-        env=merged_env,
-        text=True,
-        capture_output=True,
-        timeout=timeout_s,
-    )
+    return subprocess.run(cmd, env=merged_env, text=True, capture_output=True, timeout=timeout_s)
 
 
-def run_hf_mem(model_id: str, timeout: int = 120) -> HfMemEstimate:
-    """Run hf-mem to estimate VRAM requirements for a model.
+def _nonnegative_int(value: Any, name: str) -> int:
+    if type(value) is not int or value < 0:
+        raise HfMemError(f"Invalid hf-mem {name}: expected a non-negative integer")
+    return value
 
-    Args:
-        model_id: HuggingFace model ID
-        timeout: Command timeout in seconds
 
-    Returns:
-        HfMemEstimate with VRAM requirements
+def _parse_estimate(model_id: str, payload: Any, require_fit: bool) -> HfMemEstimate:
+    if not isinstance(payload, dict):
+        raise HfMemError("Invalid memory output from hf-mem: expected a JSON object")
+    if payload.get("version") != HF_MEM_VERSION:
+        raise HfMemError("Unexpected hf-mem version", details=f"Expected {HF_MEM_VERSION}")
+    warnings = payload.get("warnings", [])
+    if not isinstance(warnings, list) or not all(isinstance(warning, str) for warning in warnings):
+        raise HfMemError("Invalid hf-mem warnings: expected a list of strings")
+    if "files" in payload:
+        files = payload["files"]
+        names = (
+            [item.get("file") for item in files if isinstance(item, dict)] if isinstance(files, list) else []
+        )
+        raise HfMemError(
+            "Multiple weight files found; select one with --file or a GGUF quantization tag",
+            details="Available files: " + ", ".join(str(name) for name in names if name),
+        )
+    total = _nonnegative_int(payload.get("total"), "total memory bytes")
+    offloaded = payload.get("offloaded")
+    if offloaded is not None and not isinstance(offloaded, dict):
+        raise HfMemError("Invalid hf-mem offloaded memory")
+    cpu_memory = _nonnegative_int(offloaded.get("bytes"), "offloaded bytes") if offloaded is not None else 0
+    fit = None
+    raw_fit = payload.get("fit")
+    if raw_fit is not None:
+        if not isinstance(raw_fit, dict) or type(raw_fit.get("fits")) is not bool:
+            raise HfMemError("Invalid hf-mem GPU fit")
+        count = raw_fit.get("gpus")
+        count = 1 if count is None else _nonnegative_int(count, "GPU count")
+        memory = _nonnegative_int(raw_fit.get("gpu_memory"), "GPU memory bytes")
+        needed = raw_fit.get("needed")
+        if needed is not None:
+            needed = _nonnegative_int(needed, "needed GPU count")
+        if count < 1 or memory < 1 or needed == 0:
+            raise HfMemError("Invalid hf-mem GPU fit counts or memory")
+        fit = GpuFit(
+            fits=raw_fit["fits"],
+            required_bytes=_nonnegative_int(raw_fit.get("required"), "required GPU bytes"),
+            gpu_count=count,
+            memory_per_gpu_bytes=memory,
+            needed_gpu_count=needed,
+            max_model_len=_nonnegative_int(raw_fit.get("max_model_len"), "maximum context length"),
+        )
+    if require_fit and fit is None:
+        raise HfMemError("hf-mem did not return the requested GPU fit")
+    return HfMemEstimate(model_id, _bytes_to_gb(total), total, payload, fit, tuple(warnings), cpu_memory)
 
-    Raises:
-        HfMemError: If hf-mem fails or returns invalid output
+
+def run_hf_mem(
+    model_id: str,
+    timeout: int = 120,
+    *,
+    options: Optional[EstimateOptions] = None,
+    gpu_memory: Optional[str] = None,
+    gpu_memory_utilization: float = 0.92,
+) -> HfMemEstimate:
+    """Run the pinned v1 CLI, inheriting HF_TOKEN and the user's Hub token cache.
+
+    The separate Python 3.10+ environment keeps hf-mem's Python requirement from
+    changing HF Cloud's own Python support. A listing is never used as an estimate.
     """
+    options = options or EstimateOptions()
+    args = options.command_args()
+    if not math.isfinite(gpu_memory_utilization) or not 0 < gpu_memory_utilization <= 1:
+        raise HfMemError("GPU memory utilization must be finite and in (0, 1]")
+    if gpu_memory is not None:
+        args.extend(["--gpu-memory", gpu_memory, "--gpu-memory-utilization", str(gpu_memory_utilization)])
     try:
         result = _run_command(
-            ["uvx", "hf-mem", "--model-id", model_id, "--json-output", "--experimental"],
+            [
+                "uvx",
+                "--python",
+                ">=3.10",
+                "--from",
+                HF_MEM_SOURCE,
+                "hf-mem",
+                model_id,
+                "--output",
+                "json",
+                *args,
+            ],
             timeout_s=timeout,
         )
-
         if result.returncode != 0:
             raise HfMemError(
                 f"hf-mem failed for model {model_id}",
                 details=f"exit code: {result.returncode}\nstderr: {result.stderr or 'none'}",
             )
-
-        raw_output = result.stdout.strip()
-        if not raw_output:
-            raise HfMemError(
-                f"hf-mem returned empty output for {model_id}",
-                details=result.stderr or "No stderr available",
-            )
-
-        payload = json.loads(raw_output)
-        if not isinstance(payload, dict):
-            raise HfMemError(f"Invalid memory output from hf-mem for {model_id}", details="Expected a JSON object")
-
-        bytes_count = payload.get("bytes_count")
-        if bytes_count is None:
-            # Newer hf-mem JSON output may expose `total_memory`/`memory`
-            # instead of `bytes_count`.
-            bytes_count = payload.get("total_memory", payload.get("memory"))
-
-        if bytes_count is None:
-            raise HfMemError(
-                f"hf-mem output missing memory bytes for {model_id}",
-                details=f"Output: {raw_output}",
-            )
-
-        try:
-            numeric_bytes = float(bytes_count)
-            if isinstance(bytes_count, bool) or not math.isfinite(numeric_bytes) or numeric_bytes < 0:
-                raise ValueError
-            parsed_bytes = int(bytes_count)
-            # Keep large integer values exact while rejecting fractional floats.
-            if not isinstance(bytes_count, (int, str)) and parsed_bytes != numeric_bytes:
-                raise ValueError
-        except (TypeError, ValueError, OverflowError):
-            raise HfMemError(
-                f"Invalid memory bytes from hf-mem for {model_id}",
-                details="Expected a finite, non-negative whole number of bytes",
-            ) from None
-
-        required_vram_gb = _bytes_to_gb(parsed_bytes)
-
-        return HfMemEstimate(
-            model_id=model_id,
-            required_vram_gb=required_vram_gb,
-            bytes_count=parsed_bytes,
-            raw=payload,
-        )
-
+        if not result.stdout.strip():
+            raise HfMemError(f"hf-mem returned empty output for {model_id}", details=result.stderr or None)
+        return _parse_estimate(model_id, json.loads(result.stdout), require_fit=gpu_memory is not None)
     except subprocess.TimeoutExpired:
         raise HfMemError(
-            f"hf-mem timed out for model {model_id}",
-            details=f"Command exceeded {timeout}s timeout",
-        )
-    except json.JSONDecodeError as e:
-        raise HfMemError(
-            f"Invalid JSON output from hf-mem for {model_id}",
-            details=str(e),
-        )
+            f"hf-mem timed out for model {model_id}", details=f"Command exceeded {timeout}s timeout"
+        ) from None
+    except json.JSONDecodeError as error:
+        raise HfMemError(f"Invalid JSON output from hf-mem for {model_id}", details=str(error)) from error
     except FileNotFoundError:
-        raise HfMemError(
-            "hf-mem not found",
-            details="Ensure uvx is installed and hf-mem is available. Run: pip install uv",
-        )
+        raise HfMemError("hf-mem not found", details="Install uv to provide uvx: pip install uv") from None
 
 
 def load_instance_data(provider: str) -> InstanceData:

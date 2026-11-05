@@ -12,6 +12,7 @@ from hf_cloud.core.config import Config
 from hf_cloud.core.exceptions import DeploymentNotFoundError, ProviderError
 from hf_cloud.core.state import StateManager
 from hf_cloud.providers.registry import ProviderRegistry
+from hf_cloud.utils.hf_mem import EstimateOptions
 
 console = Console()
 vertex_app = typer.Typer(help="Google Cloud Vertex AI deployment management.")
@@ -305,7 +306,7 @@ def invoke(
 @vertex_app.command(name="estimate")
 def estimate(
     model_id: Annotated[
-        str, typer.Argument(help="HuggingFace model ID (e.g., 'gpt2', 'meta-llama/Llama-2-7b-hf')")
+        str, typer.Argument(help="Namespaced Hub model ID, URL, or local path (e.g., openai-community/gpt2)")
     ],
     safety_margin: Annotated[
         Optional[float],
@@ -315,6 +316,15 @@ def estimate(
         bool, typer.Option("--all", "-a", help="Show all compatible instances")
     ] = False,
     json_output: Annotated[bool, typer.Option("--json", "-j", help="Output results as JSON")] = False,
+    revision: Annotated[Optional[str], typer.Option("--revision", help="Hub branch, tag, or commit")] = None,
+    file: Annotated[Optional[str], typer.Option("--file", help="Weight file, directory, or GGUF quantization tag")] = None,
+    format: Annotated[Optional[str], typer.Option("--format", help="Weights: safetensors, gguf, or onnx")] = None,
+    max_model_len: Annotated[Optional[int], typer.Option("--max-model-len", help="Context tokens per sequence")] = None,
+    batch_size: Annotated[int, typer.Option("--batch-size", help="Concurrent sequences in the KV cache")] = 1,
+    kv_cache_dtype: Annotated[str, typer.Option("--kv-cache-dtype", help="KV cache dtype (e.g., auto, fp8)")] = "auto",
+    max_num_batched_tokens: Annotated[
+        Optional[int], typer.Option("--max-num-batched-tokens", help="Engine tokens per batch; use 2048 for A100")
+    ] = None,
 ) -> None:
     """Estimate the minimum viable Vertex AI instance for a model.
 
@@ -328,4 +338,13 @@ def estimate(
         show_all=show_all,
         json_output=json_output,
         console=console,
+        options=EstimateOptions(
+            revision=revision,
+            file=file,
+            format=format,
+            max_model_len=max_model_len,
+            batch_size=batch_size,
+            kv_cache_dtype=kv_cache_dtype,
+            max_num_batched_tokens=max_num_batched_tokens,
+        ),
     )

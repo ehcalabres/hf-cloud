@@ -121,6 +121,52 @@ reserve, from `0` (inclusive) to `1` (exclusive). For example,
 instance catalog supplies the default. Use `--json` for machine-readable results
 or `--all` to show all compatible instances.
 
+Estimation uses hf-mem v1's GPU-fit assessment for each GPU layout, including
+per-device overhead and KV-cache replication. The safety margin is passed as
+`--gpu-memory-utilization = 1 - safety-margin`; it is applied once. Instances
+are checked in ascending aggregate GPU memory order, with catalog order breaking
+ties. Instances with the same GPU count and memory per GPU reuse an assessment.
+`--all` checks every distinct layout and can take longer than a minimum estimate.
+
+Use a namespaced Hub ID such as `openai-community/gpt2` (bare `gpt2` is not
+accepted by hf-mem v1), a Hub URL, or a local model directory:
+
+```bash
+<cli> sagemaker estimate openai-community/gpt2 \
+  --max-model-len 4096 --batch-size 4 --kv-cache-dtype fp8
+
+<cli> vertex estimate ./local-model --max-model-len 8192 --json
+
+# Select a GGUF quantization instead of estimating an ambiguous file listing
+<cli> vertex estimate org/model-GGUF --format gguf --file Q4_K_M
+```
+
+Both commands also accept `--revision` and `--max-num-batched-tokens` (use `2048`
+for A100). Context length defaults to the model config, batch size to one, and KV
+cache dtype to `auto`. Authentication uses `HF_TOKEN` or the saved Hub login.
+GGUF and ONNX repositories with multiple weight files require `--file`; available
+files are shown in the error. PyTorch pickle-only weights are unsupported.
+
+Memory is displayed in **GiB**. Existing JSON keys ending in `Gb` are retained
+and also represent GiB, with `memoryUnit` identifying the unit. Each match includes
+its own `requiredVramGb`, `neededGpuCount`, and `maxModelLen` (the longest context
+that fits, or zero when not applicable). With `--all`, the top-level
+`requiredVramGb` describes the first match. JSON includes the hf-mem version,
+workload options, actual estimated context length, warnings, and CPU-offloaded
+weight memory (`cpuMemoryGb` and exact `cpuMemoryBytes`). Host RAM must be checked
+separately from GPU fit.
+
+These estimates follow hf-mem's serving-engine assumptions; configure the actual
+deployment's engine, sharding, context length and concurrency to match. Estimating
+local weights, GGUF or ONNX does not add deployment support for those formats.
+
+Until v1 is released, HF-Cloud runs the reviewed hf-mem commit
+[`2448e7c`](https://github.com/alvarobartt/hf-mem/commit/2448e7c6457949951495b6dba2f01ac3bebdf36a)
+through `uvx`. Install [uv](https://docs.astral.sh/uv/getting-started/installation/)
+and Git; the first estimate needs network access to install hf-mem and its
+dependencies. It runs in a separate Python 3.10+ environment, so HF-Cloud's own
+Python requirement is unchanged.
+
 ### 7. Delete deployment
 
 ```bash
@@ -256,4 +302,8 @@ uv run pytest
 
 # Run linting
 uv run ruff check src tests
+
+# Opt-in integration tests against the pinned real hf-mem CLI using tiny local
+# synthetic weights (first run needs dependency network access; no cloud resources)
+HF_CLOUD_TEST_HF_MEM=1 uv run pytest tests/integration/test_hf_mem_v1.py
 ```

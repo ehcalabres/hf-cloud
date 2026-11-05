@@ -1,0 +1,64 @@
+{
+  "version": "hf-mem@1.0.0",
+  "model": "org/synthetic-model",
+  "revision": null,
+  "file": "model-Q4_K_M.gguf",
+  "format": "gguf",
+  "total": 668031738,
+  "weights": {
+    "bytes": 214656,
+    "params": 321792,
+    "dtypes": {
+      "Q4_K": {
+        "bytes": 144000,
+        "params": 256000
+      },
+      "Q8_0": {
+        "bytes": 69632,
+        "params": 65536
+      },
+      "F32": {
+        "bytes": 1024,
+        "params": 256
+      }
+    }
+  },
+  "offloaded": {
+    "bytes": 144000,
+    "params": 256000,
+    "dtypes": {
+      "Q4_K": {
+        "bytes": 144000,
+        "params": 256000
+      }
+    }
+  },
+  "components": null,
+  "kv_cache": {
+    "bytes": 2097152,
+    "dtype": "F16",
+    "max_model_len": 2048,
+    "batch_size": 1,
+    "layers": {
+      "full": 4
+    }
+  },
+  "overhead": {
+    "bytes": 665719930,
+    "activations": 161061273,
+    "encoder": 0,
+    "graphs": 0,
+    "runtime": 504658657
+  },
+  "moe": null,
+  "fit": {
+    "gpu_memory": 25769803776,
+    "usable": 24212878130,
+    "required": 668031738,
+    "gpus": 1,
+    "needed": 1,
+    "fits": true,
+    "max_model_len": 2048
+  },
+  "warnings": []
+}

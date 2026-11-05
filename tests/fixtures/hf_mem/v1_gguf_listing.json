@@ -1,0 +1,57 @@
+{
+  "version": "hf-mem@1.0.0",
+  "model": "org/synthetic-model",
+  "revision": null,
+  "format": "gguf",
+  "files": [
+    {
+      "file": "model-Q4_K_M.gguf",
+      "total": 668032218,
+      "weights": {
+        "bytes": 215136,
+        "params": null
+      },
+      "kv_cache": {
+        "bytes": 2097152,
+        "dtype": "F16",
+        "max_model_len": 2048,
+        "batch_size": 1,
+        "layers": {
+          "full": 4
+        }
+      },
+      "overhead": {
+        "bytes": 665719930,
+        "activations": 161061273,
+        "encoder": 0,
+        "graphs": 0,
+        "runtime": 504658657
+      }
+    },
+    {
+      "file": "model-Q8_0.gguf",
+      "total": 668032218,
+      "weights": {
+        "bytes": 215136,
+        "params": null
+      },
+      "kv_cache": {
+        "bytes": 2097152,
+        "dtype": "F16",
+        "max_model_len": 2048,
+        "batch_size": 1,
+        "layers": {
+          "full": 4
+        }
+      },
+      "overhead": {
+        "bytes": 665719930,
+        "activations": 161061273,
+        "encoder": 0,
+        "graphs": 0,
+        "runtime": 504658657
+      }
+    }
+  ],
+  "warnings": []
+}

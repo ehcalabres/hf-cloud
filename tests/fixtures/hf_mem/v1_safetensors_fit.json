@@ -1,0 +1,47 @@
+{
+  "version": "hf-mem@1.0.0",
+  "model": "org/synthetic-model",
+  "revision": null,
+  "file": null,
+  "format": "safetensors",
+  "total": 1601044334,
+  "weights": {
+    "bytes": 2084864,
+    "params": 1042432,
+    "dtypes": {
+      "BF16": {
+        "bytes": 2084864,
+        "params": 1042432
+      }
+    }
+  },
+  "offloaded": null,
+  "components": null,
+  "kv_cache": {
+    "bytes": 1048576,
+    "dtype": "BF16",
+    "max_model_len": 512,
+    "batch_size": 2,
+    "layers": {
+      "full": 4
+    }
+  },
+  "overhead": {
+    "bytes": 1597910894,
+    "activations": 214444236,
+    "encoder": 0,
+    "graphs": 202350653,
+    "runtime": 1181116005
+  },
+  "moe": null,
+  "fit": {
+    "gpu_memory": 25769803776,
+    "usable": 24599425186,
+    "required": 6395825592,
+    "gpus": 4,
+    "needed": 1,
+    "fits": true,
+    "max_model_len": 1024
+  },
+  "warnings": []
+}
