@@ -171,11 +171,12 @@ def test_model_error_is_not_a_partial_price_comparison(comparison):
     assert json.loads(result.stdout)["error"] == "Metadata unavailable"
 
 
-def test_human_comparison_displays_extremes_and_price_basis(comparison):
+def test_human_comparison_highlights_cheapest_and_price_basis(comparison):
     result = runner.invoke(app, ["estimate", "org/model", "--limit", "2"])
     assert result.exit_code == 0, result.output
-    assert "Cheapest" in result.stdout and "Most expensive" in result.stdout
-    assert "vertex-fit" in result.stdout and "vertex-high" in result.stdout
+    assert "Cheapest compatible instance" in result.stdout
+    assert "Most expensive" not in result.stdout
+    assert "vertex-fit" in result.stdout and "vertex-high" not in result.stdout
     assert "2025-01-01" in result.stdout and "not live quotes" in result.stdout
 
 

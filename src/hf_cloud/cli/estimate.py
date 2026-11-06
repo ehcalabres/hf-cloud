@@ -106,21 +106,14 @@ class PriceSort(str, Enum):
     MOST_EXPENSIVE = "most-expensive"
 
 
-def _print_price_range(cheapest: Optional[dict], most_expensive: Optional[dict]) -> None:
+def _print_cheapest(cheapest: Optional[dict]) -> None:
     if cheapest is None:
         console.print("No catalog prices available for compatible instances.", style="yellow")
         return
-    details = Table.grid(padding=(0, 2))
-    details.add_column(style="dim")
-    details.add_column()
-    for label, instance in (("Cheapest", cheapest), ("Most expensive", most_expensive)):
-        details.add_row(
-            label,
-            Text(
-                f"{_price(instance['pricePerHourUsd'])}/h · {instance['provider']} · {instance['instanceType']}"
-            ),
-        )
-    console.print(Panel(details, title="Catalog price range", title_align="left", border_style="green"))
+    details = Text(
+        f"{_price(cheapest['pricePerHourUsd'])}/h · {cheapest['provider']} · {cheapest['instanceType']}"
+    )
+    console.print(Panel(details, title="Cheapest compatible instance", title_align="left", border_style="green"))
 
 
 def _print_comparison(rows: list[dict[str, Any]], total: int, order: PriceSort) -> None:
@@ -168,7 +161,7 @@ def estimate(
         typer.Option(
             "--limit",
             min=1,
-            help="Maximum rows to show; price range always covers all matches",
+            help="Maximum rows to show; cheapest option is selected from all matches",
             rich_help_panel="Comparison",
         ),
     ] = None,
@@ -308,7 +301,7 @@ def estimate(
         else:
             _print_workload(console, diagnostics, options, safety_margin)
             if rows:
-                _print_price_range(cheapest, most_expensive)
+                _print_cheapest(cheapest)
                 _print_comparison(output["instances"], len(rows), sort)
             else:
                 console.print("No compatible instances found.", style="yellow")

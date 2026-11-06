@@ -49,7 +49,7 @@ def test_provider_shortcut_matches_human_output(comparison, provider):
     shortcut = runner.invoke(app, [provider, "estimate", "org/model"])
     assert canonical.exit_code == shortcut.exit_code == 0
     assert shortcut.stdout == canonical.stdout
-    assert "Catalog price range" in shortcut.stdout
+    assert "Cheapest compatible instance" in shortcut.stdout
 
 
 @pytest.mark.parametrize("provider", ["sagemaker", "vertex"])

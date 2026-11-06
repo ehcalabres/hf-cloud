@@ -127,11 +127,11 @@ You can configure some default settings for your cloud provider. This step is op
 ```
 
 The primary `<cli> estimate` command compares all providers with bundled instance
-catalogs (currently SageMaker and Vertex AI). It shows the cheapest and most
-expensive compatible instances and lists matches cheapest-first by default.
+catalogs (currently SageMaker and Vertex AI). It highlights the cheapest
+compatible instance and lists matches cheapest-first by default.
 `--sort most-expensive` reverses the price order, and `--limit` limits displayed
-rows while the price range still covers every compatible match. Unknown or
-invalid prices are excluded from the range and sort after priced instances.
+rows while the cheapest summary still considers every compatible match. Unknown or
+invalid prices are excluded from the cheapest summary and sort after priced instances.
 The comparison shares one model-metadata session across all providers.
 
 These are **bundled catalog estimates in USD per instance-hour**, not live
