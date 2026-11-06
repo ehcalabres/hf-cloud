@@ -95,6 +95,7 @@ class InstanceInfo(TypedDict, total=False):
     startupTimeoutSeconds: int
     pricePerHourUsd: float
     acceleratorType: str
+    provider: str
 
 
 @dataclass
@@ -104,6 +105,8 @@ class InstanceData:
     provider: str
     instances: list[InstanceInfo]
     safety_margin_default: float
+    last_updated: Optional[str] = None
+    pricing_region: Optional[str] = None
 
 
 def _bytes_to_gb(n_bytes: float) -> float:
@@ -304,6 +307,12 @@ def run_hf_mem_batch(
         raise HfMemError("hf-mem not found", details="Install uv to provide uvx: pip install uv") from None
 
 
+def list_instance_providers() -> list[str]:
+    """Discover providers with bundled estimate catalogs without loading cloud SDKs."""
+    data_dir = Path(__file__).parent.parent / "data" / "instances"
+    return sorted(path.stem for path in data_dir.glob("*.json"))
+
+
 def load_instance_data(provider: str) -> InstanceData:
     """Load instance data from JSON file.
 
@@ -332,6 +341,8 @@ def load_instance_data(provider: str) -> InstanceData:
                 provider=data.get("provider", provider),
                 instances=data.get("instances", []),
                 safety_margin_default=data.get("safetyMarginDefault", 0.1),
+                last_updated=data.get("last_updated"),
+                pricing_region=data.get("pricingRegion"),
             )
     except json.JSONDecodeError as e:
         raise HfMemError(

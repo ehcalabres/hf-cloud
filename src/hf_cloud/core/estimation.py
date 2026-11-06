@@ -8,6 +8,7 @@ from hf_cloud.utils.hf_mem import (
     EstimateOptions,
     HfMemError,
     HfMemEstimate,
+    InstanceData,
     InstanceInfo,
     _get_total_vram,
     run_hf_mem_batch,
@@ -74,3 +75,32 @@ def select_instances(
             if not show_all:
                 break
     return selection
+
+
+def hourly_price(instance: InstanceInfo) -> Optional[float]:
+    """Return usable catalog prices; unknown or invalid prices cannot be ranked."""
+    value = instance.get("pricePerHourUsd")
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
+        return None
+    return float(value)
+
+
+def compare_instances(
+    model_id: str,
+    catalogs: list[InstanceData],
+    safety_margin: float,
+    options: EstimateOptions,
+    *,
+    descending: bool = False,
+) -> InstanceSelection:
+    """Rank all compatible provider instances while assessing shared GPU layouts once."""
+    instances = [
+        dict(instance, provider=catalog.provider) for catalog in catalogs for instance in catalog.instances
+    ]
+    selection = select_instances(model_id, instances, safety_margin, options, show_all=True)
+    priced = [match for match in selection.matches if hourly_price(match.instance) is not None]
+    unpriced = [match for match in selection.matches if hourly_price(match.instance) is None]
+    identity = lambda match: (match.instance["provider"], match.instance.get("instanceType", ""))
+    priced.sort(key=lambda match: ((-1 if descending else 1) * hourly_price(match.instance), *identity(match)))
+    unpriced.sort(key=identity)
+    return InstanceSelection(priced + unpriced, selection.warnings, selection.reference)

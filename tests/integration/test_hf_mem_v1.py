@@ -11,12 +11,14 @@ import threading
 from collections import Counter
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from unittest.mock import Mock
 from urllib.parse import urlparse
 
 import pytest
 from typer.testing import CliRunner
 
 from hf_cloud.cli import app
+from hf_cloud.utils import hf_mem
 from hf_cloud.utils.hf_mem import (
     HF_MEM_VERSION,
     EstimateOptions,
@@ -98,6 +100,34 @@ def test_real_cli_estimates_for_each_provider(local_model, provider, monkeypatch
     assert data["instance"]["numGpu"] == 4
     assert data["instance"]["requiredVramGb"] == data["requiredVramGb"]
     assert data["workload"]["kv_cache_dtype"] == "fp8"
+
+
+def test_real_global_comparison_uses_one_worker_for_all_providers(local_model, monkeypatch):
+    catalogs = {
+        "sagemaker": InstanceData(
+            "sagemaker",
+            [{"instanceType": "sm-test", "numGpu": 1, "gpuMemGbPerGpu": 24, "pricePerHourUsd": 3}],
+            0.1,
+        ),
+        "vertex": InstanceData(
+            "vertex",
+            [{"instanceType": "vertex-test", "numGpu": 1, "gpuMemGbPerGpu": 24, "pricePerHourUsd": 1}],
+            0.1,
+        ),
+    }
+    monkeypatch.setattr("hf_cloud.cli.comparison.list_instance_providers", lambda: list(catalogs))
+    monkeypatch.setattr("hf_cloud.cli.comparison.load_instance_data", lambda provider: catalogs[provider])
+    run = Mock(wraps=hf_mem._run_command)
+    monkeypatch.setattr(hf_mem, "_run_command", run)
+    result = CliRunner().invoke(app, ["estimate", local_model, "--json", "--max-model-len", "512"])
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.stdout)
+    assert data["cheapest"]["provider"] == "vertex"
+    assert data["mostExpensive"]["provider"] == "sagemaker"
+    assert data["totalCompatible"] == 2
+    run.assert_called_once()
+    request = json.loads(run.call_args.kwargs["input_text"])
+    assert request["layouts"] == [[1, 24]]
 
 
 @pytest.mark.parametrize("batched_tokens", [None, 2048])

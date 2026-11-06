@@ -111,11 +111,45 @@ You can configure some default settings for your cloud provider. This step is op
 ### 6. Estimate required instance for a model
 
 ```bash
+# Compare all providers by catalog hourly price
+<cli> estimate deepseek-ai/DeepSeek-V4.1-Flash
+
+# Show the most expensive compatible instances first
+<cli> estimate deepseek-ai/DeepSeek-V4.1-Flash --sort most-expensive --limit 10
+
+# Filter providers, configure the workload, or get structured results
+<cli> estimate openai-community/gpt2 --provider sagemaker --provider vertex \
+  --max-model-len 512 --batch-size 4 --json
+
+# Find the minimum memory fit within a single provider
 <cli> sagemaker estimate meta-llama/Llama-2-7b-hf
 <cli> vertex estimate meta-llama/Llama-2-7b-hf
 ```
 
-Both estimate commands accept `--safety-margin` as the fraction of VRAM to
+The global `<cli> estimate` command compares all providers with bundled instance
+catalogs (currently SageMaker and Vertex AI). It shows the cheapest and most
+expensive compatible instances and lists matches cheapest-first by default.
+`--sort most-expensive` reverses the price order, and `--limit` limits displayed
+rows while the price range still covers every compatible match. Unknown or
+invalid prices are excluded from the range and sort after priced instances.
+The comparison shares one model-metadata session across all providers.
+
+These are **bundled catalog estimates in USD per instance-hour**, not live
+quotes. Catalog dates and pricing regions (or their absence) are displayed and
+included in JSON. Rates can differ by region, serving service, and discounts;
+storage, network, and other charges are outside this comparison. Verify a
+deployment's price with [AWS pricing](https://aws.amazon.com/sagemaker/ai/pricing/)
+or [Google Cloud pricing](https://cloud.google.com/vertex-ai/pricing).
+Cloud capacity and quotas are not checked. Azure is excluded until it has an
+instance catalog.
+
+Global JSON output includes `cheapest`, `mostExpensive`, `totalCompatible`,
+`pricedCount`, `unpricedCount`, ranked `instances` with their `provider`, and
+`pricing` metadata. `--provider` can be repeated to select providers. A shared
+`--safety-margin` defaults to 0.1 so the comparison uses the same reserve policy
+for every provider. The model-selection and workload options below also apply.
+
+The provider-specific estimate commands accept `--safety-margin` as the fraction of VRAM to
 reserve, from `0` (inclusive) to `1` (exclusive). For example,
 `--safety-margin 0.2` keeps 20% free. Without this option, the provider's bundled
 instance catalog supplies the default. Use `--json` for machine-readable results
@@ -144,7 +178,7 @@ accepted by hf-mem v1), a Hub URL, or a local model directory:
 <cli> vertex estimate org/model-GGUF --format gguf --file Q4_K_M
 ```
 
-Both commands also accept `--revision` and `--max-num-batched-tokens` (use `2048`
+All estimate commands also accept `--revision` and `--max-num-batched-tokens` (use `2048`
 for A100). Context length defaults to the model config, batch size to one, and KV
 cache dtype to `auto`. Authentication uses `HF_TOKEN` or the saved Hub login.
 GGUF and ONNX repositories with multiple weight files require `--file`; available
@@ -187,6 +221,7 @@ Python requirement is unchanged.
 | `<cli> [PROVIDER] logs <id>` | View deployment logs |
 | `<cli> [PROVIDER] invoke <id>` | Test inference |
 | `<cli> [PROVIDER] estimate <model>` | Estimate minimum viable instance for a model |
+| `<cli> estimate <model>` | Compare compatible instances across providers by hourly price |
 | `<cli> [PROVIDER] delete <id>` | Delete deployment |
 | `<cli> ls` | List all deployments (all providers) |
 | `<cli> providers ls` | List available providers |
