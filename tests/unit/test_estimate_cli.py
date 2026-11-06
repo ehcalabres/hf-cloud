@@ -88,8 +88,7 @@ def test_estimate_json_contract(estimation, provider, show_all):
         "warnings": [],
         "weightsFormat": "safetensors",
     }
-    if provider == "vertex":
-        instance["acceleratorType"] = "TEST_GPU"
+    instance["acceleratorType"] = "TEST_GPU"
     assert json.loads(result.stdout) == {
         "modelId": "org/model",
         "requiredVramGb": 16,

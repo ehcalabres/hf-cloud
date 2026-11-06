@@ -31,7 +31,7 @@ _PROVIDER_LABELS = {
 }
 
 
-def _instance_output(match: InstanceMatch, provider: str) -> dict[str, Any]:
+def _instance_output(match: InstanceMatch) -> dict[str, Any]:
     instance, estimate = match.instance, match.estimate
     fit = estimate.fit
     assert fit is not None  # select_instances only returns validated GPU assessments.
@@ -52,9 +52,8 @@ def _instance_output(match: InstanceMatch, provider: str) -> dict[str, Any]:
         "cpuMemoryBytes": estimate.cpu_memory_bytes,
         "warnings": list(estimate.warnings),
         "weightsFormat": estimate.raw.get("format"),
+        "acceleratorType": instance.get("acceleratorType"),
     }
-    if provider == "vertex":
-        output["acceleratorType"] = instance.get("acceleratorType")
     return output
 
 
@@ -75,7 +74,7 @@ def _accelerator_label(instance: dict[str, Any]) -> str:
 def _print_table(console: Console, provider: str, instances: list[dict[str, Any]]) -> None:
     provider_label, _ = _PROVIDER_LABELS[provider]
     wide = console.width >= 105
-    show_accelerator = provider == "vertex" and console.width >= 120
+    show_accelerator = console.width >= 120
     table = Table(
         title=f"Compatible {provider_label} Instances", box=box.SIMPLE_HEAD, header_style="bold", padding=(0, 1)
     )
@@ -94,7 +93,7 @@ def _print_table(console: Console, provider: str, instances: list[dict[str, Any]
         if show_accelerator:
             row.append(_accelerator_label(instance) or "N/A")
         layout = f"{instance['numGpu']} × {instance['gpuMemGbPerGpu']:g}"
-        if provider == "vertex" and not show_accelerator:
+        if not show_accelerator and instance.get("acceleratorType"):
             layout += f" {_accelerator_label(instance)}"
         row.extend(
             [
@@ -113,12 +112,12 @@ def _print_table(console: Console, provider: str, instances: list[dict[str, Any]
     )
 
 
-def _print_recommendation(console: Console, provider: str, instance: dict[str, Any]) -> None:
+def _print_recommendation(console: Console, instance: dict[str, Any]) -> None:
     details = Table.grid(padding=(0, 2))
     details.add_column(style="dim")
     details.add_column()
     layout = f"{instance['numGpu']} × {instance['gpuMemGbPerGpu']:g} GiB"
-    if provider == "vertex" and instance.get("acceleratorType"):
+    if instance.get("acceleratorType"):
         layout += f" · {_accelerator_label(instance)}"
     details.add_row("GPUs", Text(layout))
     details.add_row(
@@ -221,7 +220,7 @@ def estimate_instances(
         with console.status("Estimating model memory...") if not json_output else nullcontext():
             selection = select_instances(model_id, instance_data.instances, margin, options, show_all=show_all)
 
-        instances = [_instance_output(match, provider) for match in selection.matches]
+        instances = [_instance_output(match) for match in selection.matches]
         reference = selection.matches[0].estimate if selection.matches else selection.reference
         diagnostics = {
             "hfMemVersion": HF_MEM_VERSION,
@@ -270,7 +269,7 @@ def estimate_instances(
             if show_all:
                 _print_table(console, provider, instances)
             else:
-                _print_recommendation(console, provider, instances[0])
+                _print_recommendation(console, instances[0])
             _print_diagnostics(console, diagnostics)
             if not show_all:
                 _print_deploy_command(console, provider, model_id, instances[0], options)
