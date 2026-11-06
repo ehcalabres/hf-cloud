@@ -4,7 +4,7 @@ import json
 import math
 import os
 import subprocess
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Optional, TypedDict
 
@@ -117,12 +117,18 @@ def _get_total_vram(instance: InstanceInfo) -> float:
 
 
 def _run_command(
-    cmd: list[str], *, env: Optional[dict[str, str]] = None, timeout_s: int = 120
+    cmd: list[str],
+    *,
+    env: Optional[dict[str, str]] = None,
+    timeout_s: int = 120,
+    input_text: Optional[str] = None,
 ) -> subprocess.CompletedProcess[str]:
     merged_env = os.environ.copy()
     if env:
         merged_env.update(env)
-    return subprocess.run(cmd, env=merged_env, text=True, capture_output=True, timeout=timeout_s)
+    return subprocess.run(
+        cmd, env=merged_env, input=input_text, text=True, capture_output=True, timeout=timeout_s
+    )
 
 
 def _nonnegative_int(value: Any, name: str) -> int:
@@ -228,6 +234,72 @@ def run_hf_mem(
         ) from None
     except json.JSONDecodeError as error:
         raise HfMemError(f"Invalid JSON output from hf-mem for {model_id}", details=str(error)) from error
+    except FileNotFoundError:
+        raise HfMemError("hf-mem not found", details="Install uv to provide uvx: pip install uv") from None
+
+
+def run_hf_mem_batch(
+    model_id: str,
+    layouts: list[tuple[int, float]],
+    *,
+    options: EstimateOptions,
+    gpu_memory_utilization: float,
+    show_all: bool = False,
+    timeout: int = 120,
+) -> list[HfMemEstimate]:
+    """Evaluate ordered GPU layouts in one process with shared model metadata."""
+    options.validate()
+    if not math.isfinite(gpu_memory_utilization) or not 0 < gpu_memory_utilization <= 1:
+        raise HfMemError("GPU memory utilization must be finite and in (0, 1]")
+    if not layouts:
+        return []
+    request = {
+        "version": HF_MEM_VERSION,
+        "model": model_id,
+        "layouts": layouts,
+        "options": asdict(options),
+        "utilization": gpu_memory_utilization,
+        "show_all": show_all,
+    }
+    try:
+        result = _run_command(
+            [
+                "uvx",
+                "--python",
+                ">=3.10",
+                "--from",
+                HF_MEM_SOURCE,
+                "python",
+                "-I",  # Avoid sibling utility modules shadowing Python standard libraries.
+                str(Path(__file__).with_name("_hf_mem_worker.py")),
+            ],
+            input_text=json.dumps(request),
+            timeout_s=timeout,
+        )
+        if result.returncode != 0:
+            raise HfMemError(f"hf-mem failed for model {model_id}", details=result.stderr or None)
+        payload = json.loads(result.stdout)
+        if not isinstance(payload, list) or not 0 < len(payload) <= len(layouts):
+            raise HfMemError("Invalid hf-mem batch result")
+        estimates = [_parse_estimate(model_id, item, require_fit=True) for item in payload]
+        for (count, memory), estimate in zip(layouts, estimates):
+            if estimate.fit.gpu_count != count or estimate.fit.memory_per_gpu_bytes != int(memory * 1024**3):
+                raise HfMemError("hf-mem GPU fit does not match the requested GPU layout")
+        if show_all:
+            complete = len(estimates) == len(layouts)
+        else:
+            complete = not any(item.fit.fits for item in estimates[:-1]) and (
+                estimates[-1].fit.fits or len(estimates) == len(layouts)
+            )
+        if not complete:
+            raise HfMemError("Incomplete hf-mem batch result")
+        return estimates
+    except subprocess.TimeoutExpired:
+        raise HfMemError(
+            f"hf-mem timed out for model {model_id}", details=f"Command exceeded {timeout}s timeout"
+        ) from None
+    except json.JSONDecodeError as error:
+        raise HfMemError("Invalid JSON output from hf-mem batch", details=str(error)) from error
     except FileNotFoundError:
         raise HfMemError("hf-mem not found", details="Install uv to provide uvx: pip install uv") from None
 

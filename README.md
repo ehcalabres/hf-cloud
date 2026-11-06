@@ -125,8 +125,11 @@ Estimation uses hf-mem v1's GPU-fit assessment for each GPU layout, including
 per-device overhead and KV-cache replication. The safety margin is passed as
 `--gpu-memory-utilization = 1 - safety-margin`; it is applied once. Instances
 are checked in ascending aggregate GPU memory order, with catalog order breaking
-ties. Instances with the same GPU count and memory per GPU reuse an assessment.
-`--all` checks every distinct layout and can take longer than a minimum estimate.
+ties. All layouts run in one isolated worker, reusing the repository listing,
+configuration, weight metadata, and parsed Safetensors summaries within that
+command. Instances with the same GPU count and memory per GPU also reuse an
+assessment. `--all` checks every distinct layout without fetching the same model
+metadata for each layout. A minimum estimate stops at the first fitting layout.
 
 Use a namespaced Hub ID such as `openai-community/gpt2` (bare `gpt2` is not
 accepted by hf-mem v1), a Hub URL, or a local model directory:

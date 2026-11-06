@@ -16,6 +16,7 @@ from hf_cloud.utils.hf_mem import (
     find_compatible_instances,
     find_minimum_instance,
     run_hf_mem,
+    run_hf_mem_batch,
 )
 
 GIB = 1024**3
@@ -249,6 +250,61 @@ def test_real_upstream_listing_fixture(command):
         run_hf_mem("org/synthetic-model")
     assert "model-Q4_K_M.gguf" in error.value.details
     assert "model-Q8_0.gguf" in error.value.details
+
+
+def test_batch_runs_one_isolated_process_and_validates_request(command, payload):
+    command.side_effect = None
+    command.return_value = subprocess.CompletedProcess([], 0, json.dumps([payload]), "")
+    options = EstimateOptions(max_model_len=1024, batch_size=4)
+    results = run_hf_mem_batch("org/model", [(4, 24), (8, 80)], options=options, gpu_memory_utilization=0.8)
+    command.assert_called_once()
+    args = command.call_args.args[0]
+    assert args[:5] == ["uvx", "--python", ">=3.10", "--from", HF_MEM_SOURCE]
+    assert args[5:7] == ["python", "-I"]
+    request = json.loads(command.call_args.kwargs["input_text"])
+    assert request["layouts"] == [[4, 24], [8, 80]]
+    assert request["utilization"] == 0.8
+    assert request["options"]["max_model_len"] == 1024
+    assert request["options"]["batch_size"] == 4
+    assert len(results) == 1 and results[0].fit.fits
+
+
+@pytest.mark.parametrize("output", ["{}", "[]", "[{}]", "null"])
+def test_batch_rejects_invalid_output(command, output):
+    command.side_effect = None
+    command.return_value = subprocess.CompletedProcess([], 0, output, "")
+    with pytest.raises(HfMemError):
+        run_hf_mem_batch("org/model", [(4, 24)], options=EstimateOptions(), gpu_memory_utilization=0.9)
+
+
+def test_batch_rejects_mismatched_layout(command, payload):
+    command.side_effect = None
+    command.return_value = subprocess.CompletedProcess([], 0, json.dumps([payload]), "")
+    with pytest.raises(HfMemError, match="does not match"):
+        run_hf_mem_batch("org/model", [(1, 24)], options=EstimateOptions(), gpu_memory_utilization=0.9)
+
+
+@pytest.mark.parametrize("show_all,first_fits", [(True, True), (False, False)])
+def test_batch_rejects_truncated_results(command, payload, show_all, first_fits):
+    payload["fit"]["fits"] = first_fits
+    command.side_effect = None
+    command.return_value = subprocess.CompletedProcess([], 0, json.dumps([payload]), "")
+    with pytest.raises(HfMemError, match="Incomplete"):
+        run_hf_mem_batch(
+            "org/model",
+            [(4, 24), (8, 80)],
+            options=EstimateOptions(),
+            gpu_memory_utilization=0.9,
+            show_all=show_all,
+        )
+
+
+def test_batch_preserves_listing_error(command):
+    path = Path(__file__).parents[1] / "fixtures" / "hf_mem" / "v1_gguf_listing.json"
+    command.side_effect = None
+    command.return_value = subprocess.CompletedProcess([], 0, json.dumps([json.loads(path.read_text())]), "")
+    with pytest.raises(HfMemError, match="select one with --file"):
+        run_hf_mem_batch("org/model", [(4, 24)], options=EstimateOptions(), gpu_memory_utilization=0.9)
 
 
 @pytest.mark.parametrize("select", [find_minimum_instance, find_compatible_instances])

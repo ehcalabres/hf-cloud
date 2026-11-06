@@ -45,7 +45,22 @@ def estimation(monkeypatch):
         instance["acceleratorType"] = "TEST_GPU"
     run = Mock(side_effect=_fake_estimate)
     load = Mock(side_effect=lambda provider: InstanceData(provider, instances, 0.2))
-    monkeypatch.setattr("hf_cloud.core.estimation.run_hf_mem", run)
+
+    def batch(model_id, layouts, *, options, gpu_memory_utilization, show_all):
+        results = []
+        for count, memory in layouts:
+            estimate = run(
+                model_id,
+                options=options,
+                gpu_memory=f"{count}x{memory:g}",
+                gpu_memory_utilization=gpu_memory_utilization,
+            )
+            results.append(estimate)
+            if estimate.fit.fits and not show_all:
+                break
+        return results
+
+    monkeypatch.setattr("hf_cloud.core.estimation.run_hf_mem_batch", batch)
     monkeypatch.setattr("hf_cloud.cli.estimate.load_instance_data", load)
     return run, load
 
