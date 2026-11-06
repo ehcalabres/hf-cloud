@@ -50,9 +50,10 @@ Standalone fallback:
 1. Configure provider defaults:
    - `hf cloud providers configure sagemaker`
    - `hf cloud providers configure vertex`
-2. Estimate minimum viable instances before deployment:
-   - `hf cloud sagemaker estimate MODEL_ID`
-   - `hf cloud vertex estimate MODEL_ID`
+2. Compare instance price estimates before deployment:
+   - `hf cloud estimate MODEL_ID`
+   - `hf cloud estimate MODEL_ID --provider sagemaker`
+   - `hf cloud estimate MODEL_ID --provider vertex`
 3. Deploy a model:
    - `hf cloud sagemaker deploy MODEL_ID --name NAME`
    - `hf cloud vertex deploy MODEL_ID --name NAME`

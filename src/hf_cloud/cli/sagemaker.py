@@ -7,13 +7,12 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from hf_cloud.cli.estimate import estimate_instances
+from hf_cloud.cli.estimate import provider_estimate
 from hf_cloud.core.config import Config
 from hf_cloud.core.exceptions import DeploymentNotFoundError, ProviderError
 from hf_cloud.core.state import StateManager
 from hf_cloud.providers.sagemaker import SageMakerProvider
 from hf_cloud.providers.sagemaker.utils import _decode_ansi_logs
-from hf_cloud.utils.hf_mem import EstimateOptions
 
 console = Console()
 sagemaker_app = typer.Typer(help="AWS SageMaker deployment management.")
@@ -305,80 +304,5 @@ def invoke(
         raise typer.Exit(code=1)
 
 
-@sagemaker_app.command(name="estimate")
-def estimate(
-    model_id: Annotated[
-        str, typer.Argument(help="Namespaced Hub model ID, URL, or local path (e.g., openai-community/gpt2)")
-    ],
-    safety_margin: Annotated[
-        Optional[float],
-        typer.Option(
-            "--safety-margin",
-            "-s",
-            help="Fraction of VRAM to keep free (e.g., 0.1 for 10%)",
-            rich_help_panel="Selection",
-        ),
-    ] = None,
-    show_all: Annotated[
-        bool, typer.Option("--all", "-a", help="Show all compatible instances", rich_help_panel="Selection")
-    ] = False,
-    json_output: Annotated[
-        bool, typer.Option("--json", "-j", help="Output results as JSON", rich_help_panel="Output")
-    ] = False,
-    revision: Annotated[
-        Optional[str],
-        typer.Option("--revision", help="Hub branch, tag, or commit", rich_help_panel="Model selection"),
-    ] = None,
-    file: Annotated[
-        Optional[str],
-        typer.Option(
-            "--file", help="Weight file, directory, or GGUF quantization tag", rich_help_panel="Model selection"
-        ),
-    ] = None,
-    format: Annotated[
-        Optional[str],
-        typer.Option("--format", help="Weights: safetensors, gguf, or onnx", rich_help_panel="Model selection"),
-    ] = None,
-    max_model_len: Annotated[
-        Optional[int],
-        typer.Option("--max-model-len", help="Context tokens per sequence", rich_help_panel="Workload"),
-    ] = None,
-    batch_size: Annotated[
-        int,
-        typer.Option("--batch-size", help="Concurrent sequences in the KV cache", rich_help_panel="Workload"),
-    ] = 1,
-    kv_cache_dtype: Annotated[
-        str,
-        typer.Option("--kv-cache-dtype", help="KV cache dtype (e.g., auto, fp8)", rich_help_panel="Workload"),
-    ] = "auto",
-    max_num_batched_tokens: Annotated[
-        Optional[int],
-        typer.Option(
-            "--max-num-batched-tokens",
-            help="Engine tokens per batch; use 2048 for A100",
-            rich_help_panel="Workload",
-        ),
-    ] = None,
-) -> None:
-    """Estimate the minimum viable SageMaker instance for a model.
-
-    Uses hf-mem to calculate VRAM requirements and matches against
-    available SageMaker instance types.
-    """
-    estimate_instances(
-        model_id,
-        provider="sagemaker",
-        safety_margin=safety_margin,
-        show_all=show_all,
-        json_output=json_output,
-        console=console,
-        options=EstimateOptions(
-            revision=revision,
-            file=file,
-            format=format,
-            max_model_len=max_model_len,
-            batch_size=batch_size,
-            kv_cache_dtype=kv_cache_dtype,
-            max_num_batched_tokens=max_num_batched_tokens,
-        ),
-    )
+# Keep the provider spelling as a shortcut to the canonical estimate command.
+sagemaker_app.command(name="estimate")(provider_estimate("sagemaker"))

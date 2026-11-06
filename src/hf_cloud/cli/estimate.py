@@ -1,34 +1,32 @@
-"""Shared estimation workflow and output for cloud provider commands."""
+"""Canonical estimate command and provider-filtered compatibility aliases."""
 
 import json
-import shlex
 from contextlib import nullcontext
 from dataclasses import asdict
-from pathlib import Path
-from typing import Any, Optional
+from enum import Enum
+from functools import wraps
+from inspect import signature
+from typing import Annotated, Any, Callable, Optional
 
 import typer
 from rich import box
-from rich.console import Console, Group
+from rich.console import Console
 from rich.panel import Panel
-from rich.progress_bar import ProgressBar
 from rich.table import Table
 from rich.text import Text
 
-from hf_cloud.core.estimation import InstanceMatch, select_instances
+from hf_cloud.core.estimation import InstanceMatch, compare_instances, hourly_price
 from hf_cloud.utils.hf_mem import (
     HF_MEM_VERSION,
     EstimateOptions,
     HfMemError,
     _get_total_vram,
+    list_instance_providers,
     load_instance_data,
     validate_safety_margin,
 )
 
-_PROVIDER_LABELS = {
-    "sagemaker": ("SageMaker", "Instance Type"),
-    "vertex": ("Vertex AI", "Machine Type"),
-}
+console = Console()
 
 
 def _instance_output(match: InstanceMatch) -> dict[str, Any]:
@@ -71,117 +69,6 @@ def _accelerator_label(instance: dict[str, Any]) -> str:
     )
 
 
-def _print_table(console: Console, provider: str, instances: list[dict[str, Any]]) -> None:
-    provider_label, _ = _PROVIDER_LABELS[provider]
-    wide = console.width >= 105
-    show_accelerator = console.width >= 120
-    table = Table(
-        title=f"Compatible {provider_label} Instances", box=box.SIMPLE_HEAD, header_style="bold", padding=(0, 1)
-    )
-    table.add_column("Instance", style="cyan", no_wrap=True)
-    if show_accelerator:
-        table.add_column("Accelerator")
-    table.add_column("GPUs", no_wrap=True)
-    table.add_column("VRAM used / total", justify="right", no_wrap=True)
-    if wide:
-        table.add_column("Free", justify="right", no_wrap=True)
-        table.add_column("Usage", justify="right", no_wrap=True)
-    table.add_column("Est. $/h", justify="right", no_wrap=True)
-
-    for index, instance in enumerate(instances):
-        row = [instance.get("instanceType") or "N/A"]
-        if show_accelerator:
-            row.append(_accelerator_label(instance) or "N/A")
-        layout = f"{instance['numGpu']} × {instance['gpuMemGbPerGpu']:g}"
-        if not show_accelerator and instance.get("acceleratorType"):
-            layout += f" {_accelerator_label(instance)}"
-        row.extend(
-            [
-                layout,
-                f"{instance['requiredVramGb']:,.2f} / {instance['totalVramGb']:g}",
-            ]
-        )
-        if wide:
-            row.extend([f"{instance['vramLeftGb']:,.1f}", f"{instance['usagePercent']:.1f}%"])
-        row.append(_price(instance.get("pricePerHourUsd")))
-        table.add_row(*row, style="bold" if index == 0 else None)
-    console.print(table)
-    console.print(
-        f"{len(instances)} compatible instances · memory in GiB · first row is the minimum memory fit.",
-        style="dim",
-    )
-
-
-def _print_recommendation(console: Console, instance: dict[str, Any]) -> None:
-    details = Table.grid(padding=(0, 2))
-    details.add_column(style="dim")
-    details.add_column()
-    layout = f"{instance['numGpu']} × {instance['gpuMemGbPerGpu']:g} GiB"
-    if instance.get("acceleratorType"):
-        layout += f" · {_accelerator_label(instance)}"
-    details.add_row("GPUs", Text(layout))
-    details.add_row(
-        "GPU memory",
-        f"{instance['requiredVramGb']:,.2f} / {instance['totalVramGb']:g} GiB · {instance['usagePercent']:.1f}% used",
-    )
-    if console.width >= 60:
-        details.add_row(
-            "", ProgressBar(total=100, completed=instance["usagePercent"], width=min(32, console.width - 25))
-        )
-    details.add_row("Free GPU memory", f"{instance['vramLeftGb']:,.1f} GiB")
-    if instance["neededGpuCount"] != instance["numGpu"]:
-        details.add_row("GPUs needed", str(instance["neededGpuCount"]))
-    if instance["maxModelLen"]:
-        details.add_row("Maximum context", f"{instance['maxModelLen']:,} tokens")
-    details.add_row(
-        "Estimated price",
-        f"{_price(instance.get('pricePerHourUsd'))} / hour"
-        if instance.get("pricePerHourUsd") is not None
-        else "Not available",
-    )
-    console.print(
-        Panel(
-            Group(Text(instance["instanceType"], style="bold cyan"), Text(""), details),
-            title="Recommended Instance",
-            title_align="left",
-            border_style="green",
-            padding=(1, 2),
-        )
-    )
-
-
-def _print_deploy_command(
-    console: Console, provider: str, model_id: str, instance: dict[str, Any], options: EstimateOptions
-) -> None:
-    # These commands do not expose local files, revisions, or alternate engines.
-    if (
-        instance["weightsFormat"] != "safetensors"
-        or options.revision
-        or options.file
-        or "@" in model_id
-        or ":" in model_id
-        or model_id.count("/") != 1
-        or Path(model_id).exists()
-    ):
-        return
-    instance_flag = "--machine-type" if provider == "vertex" else "--instance-type"
-    parts = [
-        f"hf-cloud {provider} deploy {shlex.quote(model_id)}",
-        "--name <name>",
-        f"{instance_flag} {instance['instanceType']}",
-    ]
-    if provider == "vertex" and instance.get("acceleratorType"):
-        parts.extend(
-            [f"--accelerator-type {instance['acceleratorType']}", f"--accelerator-count {instance['numGpu']}"]
-        )
-    command = " ".join(parts)
-    if len(command) > console.width:
-        command = " \\\n  ".join(parts)
-    console.print("\nDeploy with", style="bold")
-    # Explicit continuations keep narrow-terminal commands ready to copy.
-    console.print(Text(command, style="dim"), soft_wrap=True)
-
-
 def _print_workload(
     console: Console, diagnostics: dict[str, Any], options: EstimateOptions, margin: float
 ) -> None:
@@ -194,94 +81,6 @@ def _print_workload(
         )
     )
     console.print()
-
-
-def estimate_instances(
-    model_id: str,
-    *,
-    provider: str,
-    safety_margin: Optional[float],
-    show_all: bool,
-    json_output: bool,
-    console: Console,
-    options: Optional[EstimateOptions] = None,
-) -> None:
-    """Select instances using v1 GPU fit and render results with workload assumptions."""
-    options = options or EstimateOptions()
-    try:
-        options.validate()
-        instance_data = load_instance_data(provider)
-        margin = safety_margin if safety_margin is not None else instance_data.safety_margin_default
-        validate_safety_margin(margin)
-        if not json_output:
-            provider_label, _ = _PROVIDER_LABELS[provider]
-            console.print(Text(f"{provider_label} estimate", style="bold"))
-            console.print(model_id, style="cyan", markup=False)
-        with console.status("Estimating model memory...") if not json_output else nullcontext():
-            selection = select_instances(model_id, instance_data.instances, margin, options, show_all=show_all)
-
-        instances = [_instance_output(match) for match in selection.matches]
-        reference = selection.matches[0].estimate if selection.matches else selection.reference
-        diagnostics = {
-            "hfMemVersion": HF_MEM_VERSION,
-            "memoryUnit": "GiB",
-            "workload": asdict(options),
-            "warnings": selection.warnings,
-            "cpuMemoryGb": round(reference.cpu_memory_bytes / 1024**3, 2) if reference else 0,
-            "cpuMemoryBytes": reference.cpu_memory_bytes if reference else 0,
-            "estimatedContextLength": (
-                (reference.raw.get("kv_cache") or {}).get("max_model_len") if reference else None
-            ),
-        }
-        if not instances:
-            message = "No compatible instances found" if show_all else "No suitable instance found"
-            if json_output:
-                typer.echo(
-                    json.dumps(
-                        {
-                            "error": message,
-                            "instances" if show_all else "instance": [] if show_all else None,
-                            **diagnostics,
-                        }
-                    )
-                )
-            else:
-                console.print(f"[bold red]{message}.[/bold red]")
-                console.print("[dim]No catalog GPU layout fits this workload and safety margin.[/dim]")
-                _print_diagnostics(console, diagnostics)
-            raise typer.Exit(code=1)
-
-        if json_output:
-            typer.echo(
-                json.dumps(
-                    {
-                        "modelId": model_id,
-                        "requiredVramGb": instances[0]["requiredVramGb"],
-                        "safetyMargin": margin,
-                        "instances" if show_all else "instance": instances if show_all else instances[0],
-                        **diagnostics,
-                    },
-                    indent=2,
-                )
-            )
-        else:
-            _print_workload(console, diagnostics, options, margin)
-            if show_all:
-                _print_table(console, provider, instances)
-            else:
-                _print_recommendation(console, instances[0])
-            _print_diagnostics(console, diagnostics)
-            if not show_all:
-                _print_deploy_command(console, provider, model_id, instances[0], options)
-            console.print("\nMatch the deployment engine, sharding and workload to this estimate.", style="dim")
-    except HfMemError as e:
-        if json_output:
-            typer.echo(json.dumps({"error": e.message, "details": e.details}))
-        else:
-            console.print(f"[bold red]Error:[/bold red] {e.message}")
-            if e.details:
-                console.print(e.details, markup=False)
-        raise typer.Exit(code=1) from e
 
 
 def _print_diagnostics(console: Console, diagnostics: dict[str, Any]) -> None:
@@ -300,3 +99,259 @@ def _print_diagnostics(console: Console, diagnostics: dict[str, Any]) -> None:
         for warning in diagnostics["warnings"]:
             notes.add_row("•", Text(warning, style="dim"))
         console.print(notes)
+
+
+class PriceSort(str, Enum):
+    CHEAPEST = "cheapest"
+    MOST_EXPENSIVE = "most-expensive"
+
+
+def _print_price_range(cheapest: Optional[dict], most_expensive: Optional[dict]) -> None:
+    if cheapest is None:
+        console.print("No catalog prices available for compatible instances.", style="yellow")
+        return
+    details = Table.grid(padding=(0, 2))
+    details.add_column(style="dim")
+    details.add_column()
+    for label, instance in (("Cheapest", cheapest), ("Most expensive", most_expensive)):
+        details.add_row(
+            label,
+            Text(
+                f"{_price(instance['pricePerHourUsd'])}/h · {instance['provider']} · {instance['instanceType']}"
+            ),
+        )
+    console.print(Panel(details, title="Catalog price range", title_align="left", border_style="green"))
+
+
+def _print_comparison(rows: list[dict[str, Any]], total: int, order: PriceSort) -> None:
+    table = Table(box=box.SIMPLE_HEAD, header_style="bold", padding=(0, 1))
+    table.add_column("Provider", no_wrap=True)
+    table.add_column("Instance", style="cyan", no_wrap=True)
+    table.add_column("GPUs", no_wrap=True)
+    wide = console.width >= 105
+    if wide:
+        table.add_column("VRAM used / total", justify="right", no_wrap=True)
+    table.add_column("Est. $/h", justify="right", no_wrap=True)
+    for row in rows:
+        values = [
+            row["provider"],
+            row["instanceType"],
+            f"{row['numGpu']} × {row['gpuMemGbPerGpu']:g} {_accelerator_label(row)}",
+        ]
+        if wide:
+            values.append(f"{row['requiredVramGb']:,.2f} / {row['totalVramGb']:g}")
+        values.append(_price(row["pricePerHourUsd"]))
+        table.add_row(*values)
+    console.print(table)
+    console.print(
+        f"{len(rows)} of {total} compatible instances · {order.value} first · memory in GiB", style="dim"
+    )
+
+
+def estimate(
+    model_id: Annotated[str, typer.Argument(help="Namespaced Hub model ID, URL, or local path")],
+    providers: Annotated[
+        Optional[list[str]],
+        typer.Option(
+            "--provider",
+            "-p",
+            help="Provider to include; repeat to compare selected providers",
+            rich_help_panel="Comparison",
+        ),
+    ] = None,
+    sort: Annotated[
+        PriceSort,
+        typer.Option("--sort", help="Order compatible instances by hourly price", rich_help_panel="Comparison"),
+    ] = PriceSort.CHEAPEST,
+    limit: Annotated[
+        Optional[int],
+        typer.Option(
+            "--limit",
+            min=1,
+            help="Maximum rows to show; price range always covers all matches",
+            rich_help_panel="Comparison",
+        ),
+    ] = None,
+    safety_margin: Annotated[
+        float,
+        typer.Option(
+            "--safety-margin",
+            "-s",
+            help="Fraction of GPU memory to reserve across all providers",
+            rich_help_panel="Comparison",
+        ),
+    ] = 0.1,
+    json_output: Annotated[
+        bool, typer.Option("--json", "-j", help="Output comparison as JSON", rich_help_panel="Output")
+    ] = False,
+    show_all: Annotated[
+        bool,
+        typer.Option(
+            "--all", "-a", hidden=True, help="Compatibility flag; all matching instances are listed by default"
+        ),
+    ] = False,
+    revision: Annotated[
+        Optional[str],
+        typer.Option("--revision", help="Hub branch, tag, or commit", rich_help_panel="Model selection"),
+    ] = None,
+    file: Annotated[
+        Optional[str],
+        typer.Option(
+            "--file", help="Weight file, directory, or GGUF quantization tag", rich_help_panel="Model selection"
+        ),
+    ] = None,
+    format: Annotated[
+        Optional[str],
+        typer.Option("--format", help="Weights: safetensors, gguf, or onnx", rich_help_panel="Model selection"),
+    ] = None,
+    max_model_len: Annotated[
+        Optional[int],
+        typer.Option("--max-model-len", help="Context tokens per sequence", rich_help_panel="Workload"),
+    ] = None,
+    batch_size: Annotated[
+        int,
+        typer.Option("--batch-size", help="Concurrent sequences in the KV cache", rich_help_panel="Workload"),
+    ] = 1,
+    kv_cache_dtype: Annotated[
+        str,
+        typer.Option("--kv-cache-dtype", help="KV cache dtype (e.g., auto, fp8)", rich_help_panel="Workload"),
+    ] = "auto",
+    max_num_batched_tokens: Annotated[
+        Optional[int],
+        typer.Option(
+            "--max-num-batched-tokens",
+            help="Engine tokens per batch; use 2048 for A100",
+            rich_help_panel="Workload",
+        ),
+    ] = None,
+) -> None:
+    """Compare compatible instances across providers using bundled hourly price estimates."""
+    try:
+        options = EstimateOptions(
+            revision=revision,
+            file=file,
+            format=format,
+            max_model_len=max_model_len,
+            batch_size=batch_size,
+            kv_cache_dtype=kv_cache_dtype,
+            max_num_batched_tokens=max_num_batched_tokens,
+        )
+        options.validate()
+        validate_safety_margin(safety_margin)
+        available = list_instance_providers()
+        selected = list(dict.fromkeys(name.lower() for name in providers)) if providers else available
+        unsupported = [name for name in selected if name not in available]
+        if unsupported or not selected:
+            raise HfMemError(
+                "No estimate catalog for requested providers",
+                details=f"Unsupported: {', '.join(unsupported) or 'none available'}. Available: {', '.join(available)}",
+            )
+        catalogs = [load_instance_data(provider) for provider in selected]
+        if not json_output:
+            console.print("Instance estimate" if len(selected) == 1 else "Cross-provider estimate", style="bold")
+            console.print(model_id, style="cyan", markup=False)
+        with console.status("Comparing compatible GPU layouts...") if not json_output else nullcontext():
+            selection = compare_instances(
+                model_id, catalogs, safety_margin, options, descending=sort == PriceSort.MOST_EXPENSIVE
+            )
+        rows = [
+            {
+                **_instance_output(match),
+                "provider": match.instance["provider"],
+                "pricePerHourUsd": hourly_price(match.instance),
+            }
+            for match in selection.matches
+        ]
+        priced = [row for row in rows if row["pricePerHourUsd"] is not None]
+        cheapest = min(priced, key=lambda row: row["pricePerHourUsd"]) if priced else None
+        most_expensive = max(priced, key=lambda row: row["pricePerHourUsd"]) if priced else None
+        reference = selection.reference
+        diagnostics = {
+            "hfMemVersion": HF_MEM_VERSION,
+            "memoryUnit": "GiB",
+            "workload": asdict(options),
+            "warnings": selection.warnings,
+            "cpuMemoryGb": round(reference.cpu_memory_bytes / 1024**3, 2) if reference else 0,
+            "cpuMemoryBytes": reference.cpu_memory_bytes if reference else 0,
+            "estimatedContextLength": (reference.raw.get("kv_cache") or {}).get("max_model_len")
+            if reference
+            else None,
+        }
+        output = {
+            "modelId": model_id,
+            "providers": selected,
+            "sort": sort.value,
+            "safetyMargin": safety_margin,
+            "pricing": {
+                "source": "bundled-catalogs",
+                "currency": "USD",
+                "unit": "hour",
+                "catalogs": {
+                    catalog.provider: {"lastUpdated": catalog.last_updated, "region": catalog.pricing_region}
+                    for catalog in catalogs
+                },
+            },
+            "totalCompatible": len(rows),
+            "pricedCount": len(priced),
+            "unpricedCount": len(rows) - len(priced),
+            "cheapest": cheapest,
+            "mostExpensive": most_expensive,
+            "instances": rows[:limit],
+            **diagnostics,
+        }
+        if not rows:
+            output["error"] = "No compatible instances found"
+        elif not priced:
+            output["error"] = "No catalog prices available for compatible instances"
+        if json_output:
+            typer.echo(json.dumps(output, indent=2))
+        else:
+            _print_workload(console, diagnostics, options, safety_margin)
+            if rows:
+                _print_price_range(cheapest, most_expensive)
+                _print_comparison(output["instances"], len(rows), sort)
+            else:
+                console.print("No compatible instances found.", style="yellow")
+            console.print("\nPricing: bundled catalog estimates in USD/hour; not live quotes.", style="dim")
+            for catalog in catalogs:
+                console.print(
+                    f"  {catalog.provider}: {catalog.last_updated or 'date unknown'} · "
+                    f"{catalog.pricing_region or 'pricing region unspecified'}",
+                    style="dim",
+                )
+            if output["unpricedCount"]:
+                console.print(
+                    f"{output['unpricedCount']} compatible instances have no usable price; excluded from the price range.",
+                    style="yellow",
+                )
+            _print_diagnostics(console, diagnostics)
+        if "error" in output:
+            raise typer.Exit(code=1)
+    except HfMemError as error:
+        if json_output:
+            typer.echo(json.dumps({"error": error.message, "details": error.details}))
+        else:
+            console.print(error.message, markup=False, style="bold red")
+            if error.details:
+                console.print(error.details, markup=False)
+        raise typer.Exit(code=1) from error
+
+
+def provider_estimate(provider: str) -> Callable[..., None]:
+    """Bind the canonical command to one provider while sharing its option definitions."""
+    command_signature = signature(estimate)
+    alias_signature = command_signature.replace(
+        parameters=[
+            parameter for name, parameter in command_signature.parameters.items() if name != "providers"
+        ]
+    )
+
+    @wraps(estimate)
+    def alias(*args: Any, **kwargs: Any) -> None:
+        arguments = alias_signature.bind(*args, **kwargs).arguments
+        estimate(**arguments, providers=[provider])
+
+    # Typer uses this signature for parsing and help, so options cannot drift.
+    alias.__signature__ = alias_signature
+    alias.__doc__ = f"Shortcut for hf-cloud estimate --provider {provider}."
+    return alias

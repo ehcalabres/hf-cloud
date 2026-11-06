@@ -14,7 +14,8 @@ def test_build_skill_md_contains_core_commands() -> None:
     """Generated skill should include essential command hints."""
     content = build_skill_md()
     assert "hf cloud sagemaker deploy MODEL_ID --name NAME" in content
-    assert "hf cloud vertex estimate MODEL_ID" in content
+    assert "hf cloud estimate MODEL_ID" in content
+    assert "hf cloud estimate MODEL_ID --provider vertex" in content
     assert "replace `hf cloud` with `hf-cloud`" in content
 
 

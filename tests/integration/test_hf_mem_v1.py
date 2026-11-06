@@ -74,7 +74,15 @@ def test_real_workload_and_per_device_overhead(local_model):
 def test_real_cli_estimates_for_each_provider(local_model, provider, monkeypatch):
     catalog = InstanceData(
         provider,
-        [{"instanceType": "test-instance", "numGpu": 4, "gpuMemGbPerGpu": 24, "acceleratorType": "TEST_GPU"}],
+        [
+            {
+                "instanceType": "test-instance",
+                "numGpu": 4,
+                "gpuMemGbPerGpu": 24,
+                "acceleratorType": "TEST_GPU",
+                "pricePerHourUsd": 1,
+            }
+        ],
         0.1,
     )
     monkeypatch.setattr("hf_cloud.cli.estimate.load_instance_data", lambda name: catalog)
@@ -97,8 +105,27 @@ def test_real_cli_estimates_for_each_provider(local_model, provider, monkeypatch
     data = json.loads(result.stdout)
     assert data["memoryUnit"] == "GiB"
     assert data["estimatedContextLength"] == 512
-    assert data["instance"]["numGpu"] == 4
-    assert data["instance"]["requiredVramGb"] == data["requiredVramGb"]
+    assert data["providers"] == [provider]
+    assert data["instances"][0]["numGpu"] == 4
+    assert data["instances"][0]["requiredVramGb"] == data["cheapest"]["requiredVramGb"]
+    canonical = CliRunner().invoke(
+        app,
+        [
+            "estimate",
+            local_model,
+            "--provider",
+            provider,
+            "--json",
+            "--max-model-len",
+            "512",
+            "--batch-size",
+            "2",
+            "--kv-cache-dtype",
+            "fp8",
+        ],
+    )
+    assert canonical.exit_code == 0, canonical.output
+    assert json.loads(canonical.stdout) == data
     assert data["workload"]["kv_cache_dtype"] == "fp8"
 
 
@@ -115,8 +142,8 @@ def test_real_global_comparison_uses_one_worker_for_all_providers(local_model, m
             0.1,
         ),
     }
-    monkeypatch.setattr("hf_cloud.cli.comparison.list_instance_providers", lambda: list(catalogs))
-    monkeypatch.setattr("hf_cloud.cli.comparison.load_instance_data", lambda provider: catalogs[provider])
+    monkeypatch.setattr("hf_cloud.cli.estimate.list_instance_providers", lambda: list(catalogs))
+    monkeypatch.setattr("hf_cloud.cli.estimate.load_instance_data", lambda provider: catalogs[provider])
     run = Mock(wraps=hf_mem._run_command)
     monkeypatch.setattr(hf_mem, "_run_command", run)
     result = CliRunner().invoke(app, ["estimate", local_model, "--json", "--max-model-len", "512"])

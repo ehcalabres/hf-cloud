@@ -2,7 +2,7 @@
 
 import typer
 
-from hf_cloud.cli.comparison import estimate as compare_estimates
+from hf_cloud.cli.estimate import estimate as estimate_command
 from hf_cloud.cli.global_commands import list_all_deployments, providers_app
 from hf_cloud.cli.sagemaker import sagemaker_app
 from hf_cloud.cli.skills import skills_app
@@ -21,7 +21,7 @@ app.add_typer(vertex_app, name="vertex", help="Google Cloud Vertex AI commands")
 app.add_typer(skills_app, name="skills", help="Manage AI assistant skills")
 
 # Register global commands
-app.command(name="estimate")(compare_estimates)
+app.command(name="estimate")(estimate_command)
 app.command(name="ls", help="List all deployments across all providers.")(list_all_deployments)
 app.add_typer(providers_app, name="providers", help="Manage provider configurations")
 

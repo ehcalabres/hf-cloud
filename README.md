@@ -121,12 +121,12 @@ You can configure some default settings for your cloud provider. This step is op
 <cli> estimate openai-community/gpt2 --provider sagemaker --provider vertex \
   --max-model-len 512 --batch-size 4 --json
 
-# Find the minimum memory fit within a single provider
-<cli> sagemaker estimate meta-llama/Llama-2-7b-hf
-<cli> vertex estimate meta-llama/Llama-2-7b-hf
+# Compare instances within one provider
+<cli> estimate meta-llama/Llama-2-7b-hf --provider sagemaker
+<cli> estimate meta-llama/Llama-2-7b-hf --provider vertex
 ```
 
-The global `<cli> estimate` command compares all providers with bundled instance
+The primary `<cli> estimate` command compares all providers with bundled instance
 catalogs (currently SageMaker and Vertex AI). It shows the cheapest and most
 expensive compatible instances and lists matches cheapest-first by default.
 `--sort most-expensive` reverses the price order, and `--limit` limits displayed
@@ -149,33 +149,50 @@ Global JSON output includes `cheapest`, `mostExpensive`, `totalCompatible`,
 `--safety-margin` defaults to 0.1 so the comparison uses the same reserve policy
 for every provider. The model-selection and workload options below also apply.
 
-The provider-specific estimate commands accept `--safety-margin` as the fraction of VRAM to
+The older provider spellings remain as shortcuts:
+
+```bash
+# These produce the same results and accept the same sorting/workload options
+<cli> estimate MODEL --provider sagemaker
+<cli> sagemaker estimate MODEL
+```
+
+`<cli> vertex estimate MODEL` is likewise an alias for `estimate MODEL --provider
+vertex`. The defaults are identical: list all compatible instances in cheapest-first
+order with a 10% safety margin. `--all` / `-a` remains accepted for older scripts;
+all matches are listed by default. Use `--limit` to shorten the output.
+
+Provider aliases now return the same JSON schema as the top-level command.
+Scripts using the older singular `instance` key should use `cheapest` or the
+ranked `instances` array instead. Provider aliases no longer select by minimum
+VRAM or take their default safety margin from the provider catalog.
+
+All estimate commands accept `--safety-margin` as the fraction of VRAM to
 reserve, from `0` (inclusive) to `1` (exclusive). For example,
-`--safety-margin 0.2` keeps 20% free. Without this option, the provider's bundled
-instance catalog supplies the default. Use `--json` for machine-readable results
-or `--all` to show all compatible instances.
+`--safety-margin 0.2` keeps 20% free. The default is 0.1 for every provider.
+Use `--json` for machine-readable results.
 
 Estimation uses hf-mem v1's GPU-fit assessment for each GPU layout, including
 per-device overhead and KV-cache replication. The safety margin is passed as
-`--gpu-memory-utilization = 1 - safety-margin`; it is applied once. Instances
-are checked in ascending aggregate GPU memory order, with catalog order breaking
-ties. All layouts run in one isolated worker, reusing the repository listing,
+`--gpu-memory-utilization = 1 - safety-margin`; it is applied once. GPU layouts
+are assessed in ascending aggregate GPU memory order. All layouts run in one
+isolated worker, reusing the repository listing,
 configuration, weight metadata, and parsed Safetensors summaries within that
 command. Instances with the same GPU count and memory per GPU also reuse an
-assessment. `--all` checks every distinct layout without fetching the same model
-metadata for each layout. A minimum estimate stops at the first fitting layout.
+assessment. Every command assesses all catalog layouts to rank compatible
+instances by price; `--limit` only limits the displayed rows.
 
 Use a namespaced Hub ID such as `openai-community/gpt2` (bare `gpt2` is not
 accepted by hf-mem v1), a Hub URL, or a local model directory:
 
 ```bash
-<cli> sagemaker estimate openai-community/gpt2 \
-  --max-model-len 4096 --batch-size 4 --kv-cache-dtype fp8
+<cli> estimate openai-community/gpt2 --provider sagemaker \
+  --max-model-len 512 --batch-size 4 --kv-cache-dtype fp8
 
-<cli> vertex estimate ./local-model --max-model-len 8192 --json
+<cli> estimate ./local-model --provider vertex --max-model-len 8192 --json
 
 # Select a GGUF quantization instead of estimating an ambiguous file listing
-<cli> vertex estimate org/model-GGUF --format gguf --file Q4_K_M
+<cli> estimate org/model-GGUF --provider vertex --format gguf --file Q4_K_M
 ```
 
 All estimate commands also accept `--revision` and `--max-num-batched-tokens` (use `2048`
@@ -187,8 +204,8 @@ files are shown in the error. PyTorch pickle-only weights are unsupported.
 Memory is displayed in **GiB**. Existing JSON keys ending in `Gb` are retained
 and also represent GiB, with `memoryUnit` identifying the unit. Each match includes
 its own `requiredVramGb`, `neededGpuCount`, and `maxModelLen` (the longest context
-that fits, or zero when not applicable). With `--all`, the top-level
-`requiredVramGb` describes the first match. JSON includes the hf-mem version,
+that fits, or zero when not applicable). The `cheapest` and `mostExpensive`
+entries use the same match format. JSON includes the hf-mem version,
 workload options, actual estimated context length, warnings, and CPU-offloaded
 weight memory (`cpuMemoryGb` and exact `cpuMemoryBytes`). Host RAM must be checked
 separately from GPU fit.
@@ -220,7 +237,7 @@ Python requirement is unchanged.
 | `<cli> [PROVIDER] status <id>` | Check deployment status |
 | `<cli> [PROVIDER] logs <id>` | View deployment logs |
 | `<cli> [PROVIDER] invoke <id>` | Test inference |
-| `<cli> [PROVIDER] estimate <model>` | Estimate minimum viable instance for a model |
+| `<cli> [PROVIDER] estimate <model>` | Compatibility shortcut for `estimate <model> --provider PROVIDER` |
 | `<cli> estimate <model>` | Compare compatible instances across providers by hourly price |
 | `<cli> [PROVIDER] delete <id>` | Delete deployment |
 | `<cli> ls` | List all deployments (all providers) |
@@ -274,10 +291,10 @@ a write fails. Simultaneous CLI processes are not coordinated by a file lock.
 # Invoke
 <cli> sagemaker invoke my-gpt2-endpoint --input "Hello world"
 
-# Estimate minimum viable instance
-<cli> sagemaker estimate meta-llama/Llama-2-7b-hf
-# Show all compatible instances
-<cli> sagemaker estimate meta-llama/Llama-2-7b-hf --all
+# Compare compatible instances within SageMaker
+<cli> estimate meta-llama/Llama-2-7b-hf --provider sagemaker
+# Show the five cheapest matches
+<cli> estimate meta-llama/Llama-2-7b-hf --provider sagemaker --limit 5
 
 # Delete
 <cli> sagemaker delete my-gpt2-endpoint
@@ -308,10 +325,10 @@ a write fails. Simultaneous CLI processes are not coordinated by a file lock.
 # Invoke
 <cli> vertex invoke my-gpt2-endpoint --input "Hello world"
 
-# Estimate minimum viable machine/GPU configuration
-<cli> vertex estimate meta-llama/Llama-2-7b-hf
+# Compare compatible Vertex AI configurations
+<cli> estimate meta-llama/Llama-2-7b-hf --provider vertex
 # JSON output for scripting
-<cli> vertex estimate meta-llama/Llama-2-7b-hf --json
+<cli> estimate meta-llama/Llama-2-7b-hf --provider vertex --json
 
 # Delete
 <cli> vertex delete my-gpt2-endpoint
