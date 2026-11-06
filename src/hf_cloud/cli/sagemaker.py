@@ -312,18 +312,52 @@ def estimate(
     ],
     safety_margin: Annotated[
         Optional[float],
-        typer.Option("--safety-margin", "-s", help="Fraction of VRAM to keep free (e.g., 0.1 for 10%)"),
+        typer.Option(
+            "--safety-margin",
+            "-s",
+            help="Fraction of VRAM to keep free (e.g., 0.1 for 10%)",
+            rich_help_panel="Selection",
+        ),
     ] = None,
-    show_all: Annotated[bool, typer.Option("--all", "-a", help="Show all compatible instances")] = False,
-    json_output: Annotated[bool, typer.Option("--json", "-j", help="Output results as JSON")] = False,
-    revision: Annotated[Optional[str], typer.Option("--revision", help="Hub branch, tag, or commit")] = None,
-    file: Annotated[Optional[str], typer.Option("--file", help="Weight file, directory, or GGUF quantization tag")] = None,
-    format: Annotated[Optional[str], typer.Option("--format", help="Weights: safetensors, gguf, or onnx")] = None,
-    max_model_len: Annotated[Optional[int], typer.Option("--max-model-len", help="Context tokens per sequence")] = None,
-    batch_size: Annotated[int, typer.Option("--batch-size", help="Concurrent sequences in the KV cache")] = 1,
-    kv_cache_dtype: Annotated[str, typer.Option("--kv-cache-dtype", help="KV cache dtype (e.g., auto, fp8)")] = "auto",
+    show_all: Annotated[
+        bool, typer.Option("--all", "-a", help="Show all compatible instances", rich_help_panel="Selection")
+    ] = False,
+    json_output: Annotated[
+        bool, typer.Option("--json", "-j", help="Output results as JSON", rich_help_panel="Output")
+    ] = False,
+    revision: Annotated[
+        Optional[str],
+        typer.Option("--revision", help="Hub branch, tag, or commit", rich_help_panel="Model selection"),
+    ] = None,
+    file: Annotated[
+        Optional[str],
+        typer.Option(
+            "--file", help="Weight file, directory, or GGUF quantization tag", rich_help_panel="Model selection"
+        ),
+    ] = None,
+    format: Annotated[
+        Optional[str],
+        typer.Option("--format", help="Weights: safetensors, gguf, or onnx", rich_help_panel="Model selection"),
+    ] = None,
+    max_model_len: Annotated[
+        Optional[int],
+        typer.Option("--max-model-len", help="Context tokens per sequence", rich_help_panel="Workload"),
+    ] = None,
+    batch_size: Annotated[
+        int,
+        typer.Option("--batch-size", help="Concurrent sequences in the KV cache", rich_help_panel="Workload"),
+    ] = 1,
+    kv_cache_dtype: Annotated[
+        str,
+        typer.Option("--kv-cache-dtype", help="KV cache dtype (e.g., auto, fp8)", rich_help_panel="Workload"),
+    ] = "auto",
     max_num_batched_tokens: Annotated[
-        Optional[int], typer.Option("--max-num-batched-tokens", help="Engine tokens per batch; use 2048 for A100")
+        Optional[int],
+        typer.Option(
+            "--max-num-batched-tokens",
+            help="Engine tokens per batch; use 2048 for A100",
+            rich_help_panel="Workload",
+        ),
     ] = None,
 ) -> None:
     """Estimate the minimum viable SageMaker instance for a model.

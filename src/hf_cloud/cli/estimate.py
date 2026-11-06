@@ -8,8 +8,12 @@ from pathlib import Path
 from typing import Any, Optional
 
 import typer
-from rich.console import Console
+from rich import box
+from rich.console import Console, Group
+from rich.panel import Panel
+from rich.progress_bar import ProgressBar
 from rich.table import Table
+from rich.text import Text
 
 from hf_cloud.core.estimation import InstanceMatch, select_instances
 from hf_cloud.utils.hf_mem import (
@@ -54,63 +58,103 @@ def _instance_output(match: InstanceMatch, provider: str) -> dict[str, Any]:
     return output
 
 
-def _print_table(console: Console, provider: str, instances: list[dict[str, Any]]) -> None:
-    provider_label, instance_label = _PROVIDER_LABELS[provider]
-    table = Table(title=f"Compatible {provider_label} Instances")
-    table.add_column(instance_label, style="cyan")
-    if provider == "vertex":
-        table.add_column("Accelerator", style="green")
-    for label in (
-        "GPUs",
-        "GPU Mem (GiB)",
-        "Total VRAM (GiB)",
-        "Required (GiB)",
-        "Usage %",
-        "VRAM Left (GiB)",
-        "Price/Hour",
-    ):
-        table.add_column(label, justify="right")
+def _price(value: Optional[float]) -> str:
+    return f"${value:.2f}" if value is not None else "—"
 
-    for instance in instances:
+
+def _accelerator_label(instance: dict[str, Any]) -> str:
+    name = instance.get("acceleratorType") or ""
+    return (
+        name.removeprefix("NVIDIA_")
+        .removeprefix("TESLA_")
+        .removesuffix(f"_{instance['gpuMemGbPerGpu']:g}GB")
+        .replace("_", " ")
+    )
+
+
+def _print_table(console: Console, provider: str, instances: list[dict[str, Any]]) -> None:
+    provider_label, _ = _PROVIDER_LABELS[provider]
+    wide = console.width >= 105
+    show_accelerator = provider == "vertex" and console.width >= 120
+    table = Table(
+        title=f"Compatible {provider_label} Instances", box=box.SIMPLE_HEAD, header_style="bold", padding=(0, 1)
+    )
+    table.add_column("Instance", style="cyan", no_wrap=True)
+    if show_accelerator:
+        table.add_column("Accelerator")
+    table.add_column("GPUs", no_wrap=True)
+    table.add_column("VRAM used / total", justify="right", no_wrap=True)
+    if wide:
+        table.add_column("Free", justify="right", no_wrap=True)
+        table.add_column("Usage", justify="right", no_wrap=True)
+    table.add_column("Est. $/h", justify="right", no_wrap=True)
+
+    for index, instance in enumerate(instances):
         row = [instance.get("instanceType") or "N/A"]
-        if provider == "vertex":
-            row.append(instance.get("acceleratorType") or "N/A")
+        if show_accelerator:
+            row.append(_accelerator_label(instance) or "N/A")
+        layout = f"{instance['numGpu']} × {instance['gpuMemGbPerGpu']:g}"
+        if provider == "vertex" and not show_accelerator:
+            layout += f" {_accelerator_label(instance)}"
         row.extend(
             [
-                str(instance.get("numGpu", "N/A")),
-                str(instance.get("gpuMemGbPerGpu", "N/A")),
-                f"{instance['totalVramGb']:.0f}",
-                f"{instance['requiredVramGb']:.2f}",
-                f"{instance['usagePercent']:.1f}%",
-                f"{instance['vramLeftGb']:.1f}",
-                f"${instance.get('pricePerHourUsd') or 0:.2f}",
+                layout,
+                f"{instance['requiredVramGb']:,.2f} / {instance['totalVramGb']:g}",
             ]
         )
-        table.add_row(*row)
+        if wide:
+            row.extend([f"{instance['vramLeftGb']:,.1f}", f"{instance['usagePercent']:.1f}%"])
+        row.append(_price(instance.get("pricePerHourUsd")))
+        table.add_row(*row, style="bold" if index == 0 else None)
     console.print(table)
+    console.print(
+        f"{len(instances)} compatible instances · memory in GiB · first row is the minimum memory fit.",
+        style="dim",
+    )
 
 
-def _print_recommendation(
+def _print_recommendation(console: Console, provider: str, instance: dict[str, Any]) -> None:
+    details = Table.grid(padding=(0, 2))
+    details.add_column(style="dim")
+    details.add_column()
+    layout = f"{instance['numGpu']} × {instance['gpuMemGbPerGpu']:g} GiB"
+    if provider == "vertex" and instance.get("acceleratorType"):
+        layout += f" · {_accelerator_label(instance)}"
+    details.add_row("GPUs", Text(layout))
+    details.add_row(
+        "GPU memory",
+        f"{instance['requiredVramGb']:,.2f} / {instance['totalVramGb']:g} GiB · {instance['usagePercent']:.1f}% used",
+    )
+    if console.width >= 60:
+        details.add_row(
+            "", ProgressBar(total=100, completed=instance["usagePercent"], width=min(32, console.width - 25))
+        )
+    details.add_row("Free GPU memory", f"{instance['vramLeftGb']:,.1f} GiB")
+    if instance["neededGpuCount"] != instance["numGpu"]:
+        details.add_row("GPUs needed", str(instance["neededGpuCount"]))
+    if instance["maxModelLen"]:
+        details.add_row("Maximum context", f"{instance['maxModelLen']:,} tokens")
+    details.add_row(
+        "Estimated price",
+        f"{_price(instance.get('pricePerHourUsd'))} / hour"
+        if instance.get("pricePerHourUsd") is not None
+        else "Not available",
+    )
+    console.print(
+        Panel(
+            Group(Text(instance["instanceType"], style="bold cyan"), Text(""), details),
+            title="Recommended Instance",
+            title_align="left",
+            border_style="green",
+            padding=(1, 2),
+        )
+    )
+
+
+def _print_deploy_command(
     console: Console, provider: str, model_id: str, instance: dict[str, Any], options: EstimateOptions
 ) -> None:
-    _, instance_label = _PROVIDER_LABELS[provider]
-    console.print("[bold green]Recommended Instance:[/bold green]")
-    console.print(f"  [cyan]{instance_label}:[/cyan] {instance['instanceType']}")
-    if provider == "vertex":
-        console.print(f"  [cyan]Accelerator:[/cyan] {instance.get('acceleratorType') or 'N/A'}")
-    console.print(f"  [cyan]GPUs:[/cyan] {instance['numGpu']}x {instance['gpuMemGbPerGpu']} GiB")
-    console.print(f"  [cyan]Total VRAM:[/cyan] {instance['totalVramGb']:.0f} GiB")
-    console.print(
-        f"  [cyan]Usage:[/cyan] {instance['usagePercent']:.1f}% ({instance['vramLeftGb']:.1f} GiB left)"
-    )
-    console.print(f"  [cyan]Required VRAM:[/cyan] {instance['requiredVramGb']:.2f} GiB")
-    console.print(f"  [cyan]GPUs needed:[/cyan] {instance['neededGpuCount']}")
-    if instance["maxModelLen"]:
-        console.print(f"  [cyan]Maximum context that fits:[/cyan] {instance['maxModelLen']} tokens")
-    console.print(f"  [cyan]Price/Hour:[/cyan] ${instance.get('pricePerHourUsd') or 0:.2f}")
-    console.print()
-    # Deployment commands do not yet expose local files, revision selection or
-    # alternate serving engines. Do not suggest a command that deploys different weights.
+    # These commands do not expose local files, revisions, or alternate engines.
     if (
         instance["weightsFormat"] != "safetensors"
         or options.revision
@@ -122,11 +166,35 @@ def _print_recommendation(
     ):
         return
     instance_flag = "--machine-type" if provider == "vertex" else "--instance-type"
-    command = f"hf-cloud {provider} deploy {shlex.quote(model_id)} --name <name> {instance_flag} {instance['instanceType']}"
+    parts = [
+        f"hf-cloud {provider} deploy {shlex.quote(model_id)}",
+        "--name <name>",
+        f"{instance_flag} {instance['instanceType']}",
+    ]
     if provider == "vertex" and instance.get("acceleratorType"):
-        command += f" --accelerator-type {instance['acceleratorType']} --accelerator-count {instance['numGpu']}"
-    console.print("[dim]Deploy with:[/dim]")
-    console.print(f"[dim]  {command}[/dim]")
+        parts.extend(
+            [f"--accelerator-type {instance['acceleratorType']}", f"--accelerator-count {instance['numGpu']}"]
+        )
+    command = " ".join(parts)
+    if len(command) > console.width:
+        command = " \\\n  ".join(parts)
+    console.print("\nDeploy with", style="bold")
+    # Explicit continuations keep narrow-terminal commands ready to copy.
+    console.print(Text(command, style="dim"), soft_wrap=True)
+
+
+def _print_workload(
+    console: Console, diagnostics: dict[str, Any], options: EstimateOptions, margin: float
+) -> None:
+    context = diagnostics["estimatedContextLength"] or options.max_model_len
+    context_label = f"{context:,} tokens" if context else "not applicable"
+    console.print(
+        Text(
+            f"Context {context_label} · Batch {options.batch_size} · KV {options.kv_cache_dtype} · Reserve {margin * 100:g}%",
+            style="dim",
+        )
+    )
+    console.print()
 
 
 def estimate_instances(
@@ -147,8 +215,10 @@ def estimate_instances(
         margin = safety_margin if safety_margin is not None else instance_data.safety_margin_default
         validate_safety_margin(margin)
         if not json_output:
-            console.print(f"[bold blue]Estimating instance for {model_id}...[/bold blue]")
-        with console.status("Checking GPU layouts with hf-mem...") if not json_output else nullcontext():
+            provider_label, _ = _PROVIDER_LABELS[provider]
+            console.print(Text(f"{provider_label} estimate", style="bold"))
+            console.print(model_id, style="cyan", markup=False)
+        with console.status("Estimating model memory...") if not json_output else nullcontext():
             selection = select_instances(model_id, instance_data.instances, margin, options, show_all=show_all)
 
         instances = [_instance_output(match, provider) for match in selection.matches]
@@ -196,20 +266,15 @@ def estimate_instances(
                 )
             )
         else:
-            console.print(f"  [cyan]Safety margin:[/cyan] {margin * 100:g}%")
-            console.print(
-                f"  [cyan]Context:[/cyan] {diagnostics['estimatedContextLength'] or options.max_model_len or 'not applicable'}; "
-                f"concurrent sequences: {options.batch_size}; KV dtype: {options.kv_cache_dtype}"
-            )
-            _print_diagnostics(console, diagnostics)
+            _print_workload(console, diagnostics, options, margin)
             if show_all:
                 _print_table(console, provider, instances)
             else:
-                _print_recommendation(console, provider, model_id, instances[0], options)
-            console.print(
-                "[dim]Fit assumes hf-mem's inference engine and sharding settings; "
-                "configure the deployment to match this workload.[/dim]"
-            )
+                _print_recommendation(console, provider, instances[0])
+            _print_diagnostics(console, diagnostics)
+            if not show_all:
+                _print_deploy_command(console, provider, model_id, instances[0], options)
+            console.print("\nMatch the deployment engine, sharding and workload to this estimate.", style="dim")
     except HfMemError as e:
         if json_output:
             typer.echo(json.dumps({"error": e.message, "details": e.details}))
@@ -223,8 +288,16 @@ def estimate_instances(
 def _print_diagnostics(console: Console, diagnostics: dict[str, Any]) -> None:
     if diagnostics["cpuMemoryBytes"]:
         console.print(
-            f"  CPU-offloaded weights: {diagnostics['cpuMemoryGb']:.2f} GiB "
-            f"({diagnostics['cpuMemoryBytes']} bytes; check host RAM separately)"
+            Text(
+                f"\nCPU-offloaded weights: {diagnostics['cpuMemoryGb']:,.2f} GiB · additional host RAM required.",
+                style="yellow",
+            )
         )
-    for warning in diagnostics["warnings"]:
-        console.print(f"Warning: {warning}", markup=False, style="yellow")
+    if diagnostics["warnings"]:
+        console.print("\nNotes", style="bold yellow")
+        notes = Table.grid(padding=(0, 1))
+        notes.add_column(width=1, style="yellow")
+        notes.add_column()
+        for warning in diagnostics["warnings"]:
+            notes.add_row("•", Text(warning, style="dim"))
+        console.print(notes)
