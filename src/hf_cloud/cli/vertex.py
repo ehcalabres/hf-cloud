@@ -12,6 +12,7 @@ from hf_cloud.core.config import Config
 from hf_cloud.core.exceptions import DeploymentNotFoundError, ProviderError
 from hf_cloud.core.state import StateManager
 from hf_cloud.providers.registry import ProviderRegistry
+from hf_cloud.utils.sdk_versions import SdkUpdateCheck
 
 console = Console()
 vertex_app = typer.Typer(help="Google Cloud Vertex AI deployment management.")
@@ -59,6 +60,7 @@ def deploy(
     effective_machine_type = machine_type or defaults.get("machine_type") or "n1-standard-4"
 
     console.print(f"[bold blue]Deploying {model_id} to Google Cloud Vertex AI...[/bold blue]")
+    update_check = SdkUpdateCheck("vertex")
 
     try:
         provider = ProviderRegistry.get_provider("vertex")
@@ -103,6 +105,8 @@ def deploy(
     except Exception as e:
         console.print(f"[bold red]Deployment failed:[/bold red] {e}")
         raise typer.Exit(code=1)
+    finally:
+        update_check.notify(console)
 
 
 @vertex_app.command(name="ls")

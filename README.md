@@ -48,6 +48,35 @@ pip install -e .
 uv sync --group dev
 ```
 
+### Provider SDK versions
+
+Deployments use the SDKs installed in the environment running HF Cloud. Dependency
+minimums are declared in `pyproject.toml`; `uv sync` uses the versions in `uv.lock`.
+SageMaker uses its SDK's `ModelBuilder` to build the serving image. Vertex AI uses
+the serving image configured in HF Cloud. SDK updates do not update running endpoints.
+
+During `sagemaker deploy` and `vertex deploy`, HF Cloud checks for newer stable,
+non-yanked SDK releases on PyPI in the background and prints an informational notice
+when the command finishes. SageMaker checks `sagemaker` and `boto3`; Vertex checks
+`google-cloud-aiplatform` and `google-cloud-logging`. Results, including failed
+checks, are cached for 24 hours in `~/.hf-cloud/cache/sdk-versions/`. Checks never
+delay deployment for a network response or install updates. If the command finishes
+before the check, a later invocation can use the cached result. Offline failures
+are silent during deployment; estimates do not run SDK checks.
+
+Inspect installed and latest versions without cloud credentials:
+
+```bash
+hf-cloud providers versions
+hf-cloud providers versions --provider sagemaker --refresh
+hf-cloud providers versions --json
+```
+
+The report identifies releases that require a newer Python version. Other dependency
+constraints are left to your package manager; an available release is not a guarantee
+of compatibility. Set `HF_CLOUD_NO_UPDATE_CHECK=1` to disable automatic checks.
+Explicit `providers versions` commands still check PyPI.
+
 ## Agent Skills
 
 HF-Cloud can scaffold a reusable `SKILL.md` for coding agents.

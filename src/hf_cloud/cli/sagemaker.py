@@ -13,6 +13,7 @@ from hf_cloud.core.exceptions import DeploymentNotFoundError, ProviderError
 from hf_cloud.core.state import StateManager
 from hf_cloud.providers.sagemaker import SageMakerProvider
 from hf_cloud.providers.sagemaker.utils import _decode_ansi_logs
+from hf_cloud.utils.sdk_versions import SdkUpdateCheck
 
 console = Console()
 sagemaker_app = typer.Typer(help="AWS SageMaker deployment management.")
@@ -53,6 +54,7 @@ def deploy(
     effective_instance_type = instance_type or defaults.get("instance_type") or "ml.g5.xlarge"
 
     console.print(f"[bold blue]Deploying {model_id} to AWS SageMaker...[/bold blue]")
+    update_check = SdkUpdateCheck("sagemaker")
 
     try:
         provider = SageMakerProvider(region=region)
@@ -93,6 +95,8 @@ def deploy(
     except Exception as e:
         console.print(f"[bold red]Deployment failed:[/bold red] {e}")
         raise typer.Exit(code=1)
+    finally:
+        update_check.notify(console)
 
 
 @sagemaker_app.command(name="ls")

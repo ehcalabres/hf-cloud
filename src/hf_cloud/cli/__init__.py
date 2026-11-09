@@ -5,6 +5,7 @@ import typer
 from hf_cloud.cli.estimate import estimate as estimate_command
 from hf_cloud.cli.global_commands import list_all_deployments, providers_app
 from hf_cloud.cli.sagemaker import sagemaker_app
+from hf_cloud.cli.sdk_versions import sdk_versions as sdk_versions_command
 from hf_cloud.cli.skills import skills_app
 from hf_cloud.cli.vertex import vertex_app
 
@@ -24,6 +25,7 @@ app.add_typer(skills_app, name="skills", help="Manage AI assistant skills")
 app.command(name="estimate")(estimate_command)
 app.command(name="ls", help="List all deployments across all providers.")(list_all_deployments)
 app.add_typer(providers_app, name="providers", help="Manage provider configurations")
+providers_app.command(name="versions")(sdk_versions_command)
 
 
 def main() -> None:
