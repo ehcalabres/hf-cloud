@@ -1,4 +1,3 @@
-
 """SageMaker deployment operations using ModelBuilder."""
 
 from datetime import datetime
@@ -114,7 +113,26 @@ class SageMakerDeployer:
             model_builder.deploy(
                 endpoint_name=endpoint_name,
                 initial_instance_count=instance_count,
+                wait=True,
             )
+
+            # Some SDK versions only log a failed deployment and still return.
+            # Confirm readiness with AWS instead of trusting that return value.
+            try:
+                endpoint = self.client.sagemaker.describe_endpoint(EndpointName=endpoint_name)
+            except Exception as error:
+                raise DeploymentError(
+                    "Unable to verify SageMaker endpoint status",
+                    deployment_id=endpoint_name,
+                    details=str(error),
+                ) from error
+            endpoint_status = endpoint.get("EndpointStatus", "Unknown")
+            if endpoint_status != "InService":
+                raise DeploymentError(
+                    f"SageMaker endpoint did not become ready (status: {endpoint_status})",
+                    deployment_id=endpoint_name,
+                    details=endpoint.get("FailureReason") or "No failure reason returned by SageMaker",
+                )
 
             console.print(f"[green]Model deployed successfully to endpoint '{endpoint_name}'.[/green]")
 
@@ -124,7 +142,7 @@ class SageMakerDeployer:
                 deployment_name=deployment_name or endpoint_name,
                 provider="sagemaker",
                 model_id=model_id,
-                status=DeploymentStatus.CREATING,
+                status=DeploymentStatus.RUNNING,
                 config=config,
                 endpoint_url=f"https://runtime.sagemaker.{region}.amazonaws.com/endpoints/{endpoint_name}/invocations",
                 region=region,
@@ -136,6 +154,8 @@ class SageMakerDeployer:
 
             return deployment
 
+        except DeploymentError:
+            raise
         except ImportError:
             raise DeploymentError(
                 "SageMaker SDK is not installed",

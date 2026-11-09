@@ -52,6 +52,8 @@ uv sync --group dev
 
 Deployments use the SDKs installed in the environment running HF Cloud. Dependency
 minimums are declared in `pyproject.toml`; `uv sync` uses the versions in `uv.lock`.
+It does not upgrade packages just because a newer release exists. To upgrade one
+SDK explicitly, use `uv lock --upgrade-package sagemaker` followed by `uv sync`.
 SageMaker uses its SDK's `ModelBuilder` to build the serving image. Vertex AI uses
 the serving image configured in HF Cloud. SDK updates do not update running endpoints.
 
@@ -117,6 +119,19 @@ You can configure some default settings for your cloud provider. This step is op
   --instance-type ml.g5.xlarge \
   --region us-east-1
 ```
+
+Use `--role` to override the configured SageMaker execution role for one deployment:
+
+```bash
+<cli> sagemaker deploy openai-community/gpt2 --name my-endpoint \
+  --instance-type ml.g6.2xlarge --region us-east-1 \
+  --role arn:aws:iam::123456789012:role/MySageMakerExecutionRole
+```
+
+SageMaker deployment waits for the endpoint and verifies its AWS status. Only an
+`InService` endpoint is reported and saved as `running`. Failed endpoints produce
+a nonzero exit code and show AWS's `FailureReason`, when available. A failure to
+verify status is also an error; resources are retained for inspection.
 
 ### 3. Check deployment status
 
@@ -253,8 +268,8 @@ Until v1 is released, HF-Cloud runs the reviewed hf-mem commit
 [`2448e7c`](https://github.com/alvarobartt/hf-mem/commit/2448e7c6457949951495b6dba2f01ac3bebdf36a)
 through `uvx`. Install [uv](https://docs.astral.sh/uv/getting-started/installation/)
 and Git; the first estimate needs network access to install hf-mem and its
-dependencies. It runs in a separate Python 3.10+ environment, so HF-Cloud's own
-Python requirement is unchanged.
+dependencies. It runs in a separate Python 3.10+ environment to isolate its
+dependencies from HF-Cloud's provider SDKs.
 
 ### 7. Delete deployment
 
@@ -371,7 +386,7 @@ a write fails. Simultaneous CLI processes are not coordinated by a file lock.
 
 ## Requirements
 
-- Python 3.9+
+- Python 3.10+ (required by SageMaker SDK 3.29.0)
 
 You will also need to have the respective cloud provider authentication set up, so that `hf-cloud` can access your account. Current provider-specific requirements:
 

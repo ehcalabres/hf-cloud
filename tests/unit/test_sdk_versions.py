@@ -13,6 +13,7 @@ from rich.console import Console
 from typer.testing import CliRunner
 
 from hf_cloud.cli import app
+from hf_cloud.core.deployment import DeploymentStatus
 from hf_cloud.utils import sdk_versions as sdk
 
 
@@ -202,7 +203,7 @@ def test_deploy_commands_show_notices_on_completion_without_changing_outcome(mon
     deployment = SimpleNamespace(
         deployment_id="test",
         deployment_name="test",
-        status=SimpleNamespace(value="creating"),
+        status=DeploymentStatus.RUNNING if provider == "sagemaker" else DeploymentStatus.CREATING,
         region="us-east-1",
         instance_type="test",
         instance_count=1,

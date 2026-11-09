@@ -1,4 +1,3 @@
-
 """AWS SageMaker CLI commands."""
 
 from typing import Annotated, Optional
@@ -6,10 +5,12 @@ from typing import Annotated, Optional
 import typer
 from rich.console import Console
 from rich.table import Table
+from rich.text import Text
 
 from hf_cloud.cli.estimate import provider_estimate
 from hf_cloud.core.config import Config
-from hf_cloud.core.exceptions import DeploymentNotFoundError, ProviderError
+from hf_cloud.core.deployment import DeploymentStatus
+from hf_cloud.core.exceptions import DeploymentError, DeploymentNotFoundError, ProviderError
 from hf_cloud.core.state import StateManager
 from hf_cloud.providers.sagemaker import SageMakerProvider
 from hf_cloud.providers.sagemaker.utils import _decode_ansi_logs
@@ -39,7 +40,10 @@ def deploy(
         Optional[str], typer.Option("--instance-type", "-i", help="EC2 instance type (e.g., 'ml.g5.xlarge')")
     ] = None,
     region: Annotated[Optional[str], typer.Option("--region", "-r", help="AWS region")] = None,
-    role: Annotated[Optional[str], typer.Option("--role", help="IAM role ARN for SageMaker")] = None,
+    role: Annotated[
+        Optional[str],
+        typer.Option("--role", help="SageMaker execution role ARN or name; overrides configured default"),
+    ] = None,
     token: Annotated[
         Optional[str], typer.Option("--token", "-t", help="HuggingFace Hub token for private models")
     ] = None,
@@ -72,13 +76,18 @@ def deploy(
             config=config,
             token=token,
         )
+        if deployment.status != DeploymentStatus.RUNNING:
+            raise DeploymentError(
+                f"Endpoint deployment returned status '{deployment.status.value}'",
+                deployment_id=deployment.deployment_id,
+            )
 
         # Save to local state
         state = StateManager()
         state.add_deployment(deployment)
 
         console.print()
-        console.print("[bold green]Deployment initiated successfully![/bold green]")
+        console.print("[bold green]Deployment completed successfully![/bold green]")
         console.print()
         console.print(f"  [cyan]Deployment ID:[/cyan] {deployment.deployment_id}")
         console.print(f"  [cyan]Status:[/cyan] {deployment.status.value}")
@@ -86,14 +95,16 @@ def deploy(
         console.print(f"  [cyan]Instance Type:[/cyan] {deployment.instance_type}")
         console.print(f"  [cyan]Instance Count:[/cyan] {deployment.instance_count}")
         console.print()
-        console.print("[dim]Note: Endpoint creation may take 5-10 minutes. Check status with:[/dim]")
-        console.print(f"[dim]  hf-cloud sagemaker status {deployment.deployment_id} --region {deployment.region}[/dim]")
+        console.print("[dim]Check status with:[/dim]")
+        console.print(
+            f"[dim]  hf-cloud sagemaker status {deployment.deployment_id} --region {deployment.region}[/dim]"
+        )
 
-    except ProviderError as e:
-        console.print(f"[bold red]Error:[/bold red] {e}")
+    except (ProviderError, DeploymentError) as e:
+        console.print(Text(f"Error: {e}", style="bold red"))
         raise typer.Exit(code=1)
     except Exception as e:
-        console.print(f"[bold red]Deployment failed:[/bold red] {e}")
+        console.print(Text(f"Deployment failed: {e}", style="bold red"))
         raise typer.Exit(code=1)
     finally:
         update_check.notify(console)
