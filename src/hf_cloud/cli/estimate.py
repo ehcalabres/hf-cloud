@@ -1,11 +1,13 @@
 """Canonical estimate command and provider-filtered compatibility aliases."""
 
 import json
+import shlex
 from contextlib import nullcontext
 from dataclasses import asdict
 from enum import Enum
 from functools import wraps
 from inspect import signature
+from pathlib import Path
 from typing import Annotated, Any, Callable, Optional
 
 import typer
@@ -113,7 +115,9 @@ def _print_cheapest(cheapest: Optional[dict]) -> None:
     details = Text(
         f"{_price(cheapest['pricePerHourUsd'])}/h · {cheapest['provider']} · {cheapest['instanceType']}"
     )
-    console.print(Panel(details, title="Cheapest compatible instance", title_align="left", border_style="green"))
+    console.print(
+        Panel(details, title="Cheapest compatible instance", title_align="left", border_style="green")
+    )
 
 
 def _print_comparison(rows: list[dict[str, Any]], total: int, order: PriceSort) -> None:
@@ -139,6 +143,42 @@ def _print_comparison(rows: list[dict[str, Any]], total: int, order: PriceSort) 
     console.print(
         f"{len(rows)} of {total} compatible instances · {order.value} first · memory in GiB", style="dim"
     )
+
+
+def _print_deploy_command(model_id: str, instance: dict[str, Any], options: EstimateOptions) -> None:
+    # Deploy commands only accept Hub models, without revisions or file selection.
+    if (
+        instance["weightsFormat"] != "safetensors"
+        or options.revision
+        or options.file
+        or "@" in model_id
+        or ":" in model_id
+        or model_id.count("/") != 1
+        or Path(model_id).exists()
+    ):
+        return
+    provider = instance["provider"]
+    if provider not in {"sagemaker", "vertex"}:
+        return
+    instance_flag = "--machine-type" if provider == "vertex" else "--instance-type"
+    parts = [
+        shlex.join(["hf-cloud", provider, "deploy", model_id]),
+        "--name my-endpoint",
+        shlex.join([instance_flag, instance["instanceType"]]),
+    ]
+    if provider == "vertex" and instance.get("acceleratorType"):
+        parts.extend(
+            [
+                shlex.join(["--accelerator-type", instance["acceleratorType"]]),
+                shlex.join(["--accelerator-count", str(instance["numGpu"])]),
+            ]
+        )
+    command = " ".join(parts)
+    if len(command) > console.width:
+        command = " \\\n  ".join(parts)
+    console.print("\nDeploy cheapest instance", style="bold")
+    console.print(Text(command, style="cyan"), soft_wrap=True)
+    console.print("Match the deployment engine, sharding and workload to this estimate.", style="dim")
 
 
 def estimate(
@@ -241,7 +281,9 @@ def estimate(
             )
         catalogs = [load_instance_data(provider) for provider in selected]
         if not json_output:
-            console.print("Instance estimate" if len(selected) == 1 else "Cross-provider estimate", style="bold")
+            console.print(
+                "Instance estimate" if len(selected) == 1 else "Cross-provider estimate", style="bold"
+            )
             console.print(model_id, style="cyan", markup=False)
         with console.status("Comparing compatible GPU layouts...") if not json_output else nullcontext():
             selection = compare_instances(
@@ -318,6 +360,8 @@ def estimate(
                     style="yellow",
                 )
             _print_diagnostics(console, diagnostics)
+            if cheapest is not None:
+                _print_deploy_command(model_id, cheapest, options)
         if "error" in output:
             raise typer.Exit(code=1)
     except HfMemError as error:

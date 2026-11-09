@@ -1,6 +1,7 @@
 """Provider estimate shortcuts share the canonical command's behavior and options."""
 
 import json
+import shlex
 
 import pytest
 from typer.main import get_command
@@ -50,6 +51,72 @@ def test_provider_shortcut_matches_human_output(comparison, provider):
     assert canonical.exit_code == shortcut.exit_code == 0
     assert shortcut.stdout == canonical.stdout
     assert "Cheapest compatible instance" in shortcut.stdout
+    assert f"hf-cloud {provider} deploy org/model" in shortcut.stdout
+
+
+@pytest.mark.parametrize("provider", [None, "sagemaker", "vertex"])
+def test_deploy_hint_uses_cheapest_even_when_hidden_by_sort_and_limit(comparison, provider):
+    _, catalogs = comparison
+    catalogs["vertex"].instances[0]["numGpu"] = 2
+    command = [provider, "estimate"] if provider else ["estimate"]
+    result = runner.invoke(app, [*command, "org/model", "--sort", "most-expensive", "--limit", "1"])
+    assert result.exit_code == 0, result.output
+    hint = result.stdout.split("Deploy cheapest instance\n", 1)[1]
+    # Join explicit continuations as a shell would, then check actual CLI tokens.
+    tokens = shlex.split(hint.split("Match the deployment engine", 1)[0].replace("\\\n", ""))
+    selected = provider or "vertex"
+    expected = ["hf-cloud", selected, "deploy", "org/model", "--name", "my-endpoint"]
+    if selected == "sagemaker":
+        expected += ["--instance-type", "sm-fit"]
+    else:
+        expected += [
+            "--machine-type",
+            "vertex-fit",
+            "--accelerator-type",
+            "NVIDIA_A100_80GB",
+            "--accelerator-count",
+            "2",
+        ]
+    assert tokens == expected
+
+
+@pytest.mark.parametrize("flags", [["--revision", "dev"], ["--file", "weights.safetensors"]])
+def test_deploy_hint_does_not_drop_model_selection_options(comparison, flags):
+    result = runner.invoke(app, ["sagemaker", "estimate", "org/model", *flags])
+    assert result.exit_code == 0, result.output
+    assert "Deploy cheapest instance" not in result.stdout
+
+
+@pytest.mark.parametrize("weight_format", ["gguf", "onnx"])
+def test_deploy_hint_is_omitted_for_unsupported_weight_formats(comparison, weight_format):
+    run, _ = comparison
+    assess = run.side_effect
+
+    def different_format(*args, **kwargs):
+        estimates = assess(*args, **kwargs)
+        for estimate in estimates:
+            estimate.raw["format"] = weight_format
+        return estimates
+
+    run.side_effect = different_format
+    result = runner.invoke(app, ["sagemaker", "estimate", "org/model"])
+    assert result.exit_code == 0, result.output
+    assert "Deploy cheapest instance" not in result.stdout
+
+
+def test_deploy_hint_is_omitted_for_local_models(comparison, tmp_path):
+    result = runner.invoke(app, ["sagemaker", "estimate", str(tmp_path)])
+    assert result.exit_code == 0, result.output
+    assert "Deploy cheapest instance" not in result.stdout
+
+
+def test_deploy_hint_is_omitted_without_priced_matches(comparison):
+    _, catalogs = comparison
+    for instance in catalogs["sagemaker"].instances:
+        instance["pricePerHourUsd"] = None
+    result = runner.invoke(app, ["sagemaker", "estimate", "org/model"])
+    assert result.exit_code == 1
+    assert "Deploy cheapest instance" not in result.stdout
 
 
 @pytest.mark.parametrize("provider", ["sagemaker", "vertex"])

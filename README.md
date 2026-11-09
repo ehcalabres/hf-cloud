@@ -162,6 +162,12 @@ compatible instance and lists matches cheapest-first by default.
 rows while the cheapest summary still considers every compatible match. Unknown or
 invalid prices are excluded from the cheapest summary and sort after priced instances.
 The comparison shares one model-metadata session across all providers.
+Human-readable output ends with a deployment command for the cheapest compatible
+instance, including Vertex AI's accelerator type and count. The hint considers all
+matches regardless of `--sort` or `--limit`; change `my-endpoint` to your endpoint
+name. It is omitted for local models, selected files/revisions, and weight formats
+the deployment commands do not support. Configure the serving workload to match
+the estimate; the hint selects hardware, without applying workload options.
 
 These are **bundled catalog estimates in USD per instance-hour**, not live
 quotes. Catalog dates and pricing regions (or their absence) are displayed and
