@@ -128,6 +128,23 @@ Use `--role` to override the configured SageMaker execution role for one deploym
   --role arn:aws:iam::123456789012:role/MySageMakerExecutionRole
 ```
 
+Or resolve the role by name in the current AWS account:
+
+```bash
+<cli> sagemaker deploy openai-community/gpt2 --name my-endpoint \
+  --instance-type ml.g6.2xlarge --region us-east-1 \
+  --role-name MySageMakerExecutionRole
+```
+
+Use either `--role` or `--role-name`; both override the configured default. Before
+building the model, HF Cloud reads the role with IAM `GetRole` and checks its trust
+policy for `sts:AssumeRole` by `sagemaker.amazonaws.com`. Missing roles, unreadable
+policies, explicit denies, and incompatible source account/region restrictions fail
+before creating deployment resources. The caller needs `iam:GetRole` permission.
+Conditions needing deployment context are reported and deferred to AWS. This
+preflight checks trust; AWS still evaluates `iam:PassRole`, organization policies,
+and runtime permissions during deployment. See [SageMaker execution roles](https://docs.aws.amazon.com/sagemaker/latest/dg/sagemaker-roles.html).
+
 SageMaker deployment waits for the endpoint and verifies its AWS status. Only an
 `InService` endpoint is reported and saved as `running`. Failed endpoints produce
 a nonzero exit code and show AWS's `FailureReason`, when available. A failure to

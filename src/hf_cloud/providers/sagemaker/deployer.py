@@ -6,7 +6,7 @@ from typing import Any, Optional
 from rich.console import Console
 
 from hf_cloud.core.deployment import Deployment, DeploymentStatus
-from hf_cloud.core.exceptions import DeploymentError
+from hf_cloud.core.exceptions import DeploymentError, ProviderError
 from hf_cloud.providers.sagemaker.client import SageMakerClient
 from hf_cloud.providers.sagemaker.utils import (
     get_sagemaker_endpoint_name,
@@ -73,12 +73,14 @@ class SageMakerDeployer:
         )
 
         try:
+            # Resolve role and validate trust before SDK initialization or model work.
+            role_arn = self.client.get_execution_role(role_name=role)
+
             # Import ModelBuilder here to avoid import errors when SDK not installed
             from sagemaker.serve.model_builder import ModelBuilder
 
             # Get SageMaker session and role
             session = self.client.get_sagemaker_session()
-            role_arn = self.client.get_execution_role(role_name=role)
 
             # Get model task and schema builder
             task = get_model_task(model_id=model_id, token=token)
@@ -154,7 +156,7 @@ class SageMakerDeployer:
 
             return deployment
 
-        except DeploymentError:
+        except (DeploymentError, ProviderError):
             raise
         except ImportError:
             raise DeploymentError(

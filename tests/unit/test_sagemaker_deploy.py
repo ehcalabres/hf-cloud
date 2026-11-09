@@ -104,6 +104,59 @@ def test_explicit_arn_overrides_configured_role(deployment_flow):
     assert factory.call_args.kwargs["role_arn"] == arn
 
 
+def test_explicit_role_name_overrides_configured_role(deployment_flow):
+    provider, _, _, _ = deployment_flow
+    assert deploy_command("--role-name", "ChosenRole").exit_code == 0
+    provider.client.get_execution_role.assert_called_once_with(role_name="ChosenRole")
+
+
+@pytest.mark.parametrize(
+    "flags",
+    [
+        ["--role", "configured-role", "--role-name", "ChosenRole"],
+        ["--role-name", "arn:aws:iam::123456789012:role/ChosenRole"],
+        ["--role-name", "path/ChosenRole"],
+    ],
+)
+def test_ambiguous_or_invalid_role_name_options_fail_before_provider_work(deployment_flow, flags):
+    provider, builder, _, state = deployment_flow
+    result = deploy_command(*flags)
+    assert result.exit_code == 2, result.output
+    provider.client.get_execution_role.assert_not_called()
+    builder.build.assert_not_called()
+    state.add_deployment.assert_not_called()
+
+
+def test_invalid_role_trust_stops_before_session_model_build_and_deploy(deployment_flow):
+    provider, builder, factory, state = deployment_flow
+    # Use the real resolver and trust check rather than the fixture's role mock.
+    del provider.client.get_execution_role
+    provider.client._iam_client = Mock()
+    provider.client.iam.get_role.return_value = {
+        "Role": {
+            "Arn": "arn:aws:iam::123456789012:role/configured-role",
+            "AssumeRolePolicyDocument": {
+                "Statement": [
+                    {
+                        "Effect": "Allow",
+                        "Action": "sts:AssumeRoleWithSAML",
+                        "Principal": {"Federated": "arn:aws:iam::123456789012:saml-provider/SSO"},
+                    }
+                ]
+            },
+        }
+    }
+    result = deploy_command()
+    assert result.exit_code == 1
+    assert "does not allow SageMaker to assume it" in result.stdout
+    provider.client.get_sagemaker_session.assert_not_called()
+    deployer.get_model_task.assert_not_called()
+    factory.assert_not_called()
+    builder.build.assert_not_called()
+    builder.deploy.assert_not_called()
+    state.add_deployment.assert_not_called()
+
+
 def test_configured_role_is_used_without_override(deployment_flow):
     provider, _, _, _ = deployment_flow
     assert deploy_command().exit_code == 0

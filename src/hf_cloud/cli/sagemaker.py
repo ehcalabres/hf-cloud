@@ -44,17 +44,29 @@ def deploy(
         Optional[str],
         typer.Option("--role", help="SageMaker execution role ARN or name; overrides configured default"),
     ] = None,
+    role_name: Annotated[
+        Optional[str],
+        typer.Option(
+            "--role-name", help="Execution role name to resolve through IAM; overrides configured default"
+        ),
+    ] = None,
     token: Annotated[
         Optional[str], typer.Option("--token", "-t", help="HuggingFace Hub token for private models")
     ] = None,
     instance_count: Annotated[int, typer.Option("--instance-count", "-c", help="Number of instances")] = 1,
 ) -> None:
     """Deploy a HuggingFace model to AWS SageMaker."""
+    if role is not None and role_name is not None:
+        raise typer.BadParameter("Use either --role or --role-name, not both", param_hint="--role-name")
+    if role_name is not None and (role_name.startswith("arn:") or "/" in role_name):
+        raise typer.BadParameter(
+            "Provide a role name without a path; use --role for an ARN", param_hint="--role-name"
+        )
     # Load provider configuration defaults
     defaults = _get_provider_defaults()
 
     # Use provided values or fall back to config defaults, then hardcoded defaults
-    effective_role = role or defaults.get("role")
+    effective_role = role_name if role_name is not None else role if role is not None else defaults.get("role")
     effective_instance_type = instance_type or defaults.get("instance_type") or "ml.g5.xlarge"
 
     console.print(f"[bold blue]Deploying {model_id} to AWS SageMaker...[/bold blue]")
