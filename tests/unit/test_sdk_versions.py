@@ -182,7 +182,7 @@ def test_manual_report_filters_provider_and_keeps_json_clean(releases, monkeypat
     result = CliRunner().invoke(app, ["providers", "versions", "--refresh"])
     assert result.exit_code == 0, result.output
     assert "Provider SDK versions" in result.stdout
-    assert releases.call_count == 6
+    assert releases.call_count == 2 + sum(len(packages) for packages in sdk.PROVIDER_SDKS.values())
 
 
 def test_manual_report_rejects_unknown_provider_before_network(releases):

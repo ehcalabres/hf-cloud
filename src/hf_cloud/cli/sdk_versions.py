@@ -15,7 +15,7 @@ console = Console()
 
 def sdk_versions(
     provider: Annotated[
-        Optional[str], typer.Option("--provider", "-p", help="Filter by provider (sagemaker, vertex)")
+        Optional[str], typer.Option("--provider", "-p", help="Filter by provider (sagemaker, vertex, foundry)")
     ] = None,
     refresh: Annotated[bool, typer.Option("--refresh", help="Bypass the 24-hour release cache")] = False,
     json_output: Annotated[bool, typer.Option("--json", help="Output JSON")] = False,

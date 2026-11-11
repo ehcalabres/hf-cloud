@@ -184,4 +184,6 @@ def test_option_definitions_and_defaults_cannot_drift():
         for name, param in canonical.items():
             assert shortcut[name].default == param.default
             assert shortcut[name].opts == param.opts
-            assert str(shortcut[name].type) == str(param.type)
+            assert type(shortcut[name].type) is type(param.type)
+            if hasattr(param.type, "choices"):
+                assert shortcut[name].type.choices == param.type.choices

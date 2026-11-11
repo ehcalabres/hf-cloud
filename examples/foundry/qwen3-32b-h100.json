@@ -1,0 +1,13 @@
+{
+  "modelId": "Qwen/Qwen3-32B",
+  "modelAssetId": "azureml://registries/azure-huggingface/models/qwen--qwen3-32b/versions/3",
+  "deploymentTemplateId": "azureml://registries/azure-huggingface/deploymenttemplates/qwen--qwen3-32b--40k-nvidia-h100/labels/latest",
+  "acceleratorType": "H100_80GB",
+  "acceleratorsPerInstance": 1,
+  "maxModelLen": 32768,
+  "pricePerInstanceHourUsd": 7.91,
+  "pricingRegion": "GlobalManagedCompute",
+  "pricingObservedAt": "2026-06-03",
+  "pricingSource": "https://devblogs.microsoft.com/foundry/announcing-foundry-managed-compute/",
+  "notes": "Model/template IDs from the HF managed-compute guide. Conservative 32K comparison cap below the advertised 40K template. Historical launch pricing for one H100; verify current pricing, template availability and limits before deploying."
+}

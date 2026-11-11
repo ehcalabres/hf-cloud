@@ -93,9 +93,14 @@ class InstanceInfo(TypedDict, total=False):
     numGpu: int
     gpuMemGbPerGpu: float
     startupTimeoutSeconds: int
-    pricePerHourUsd: float
+    pricePerHourUsd: Optional[float]
     acceleratorType: str
     provider: str
+    maxContextLength: int
+    modelAssetId: str
+    deploymentTemplateId: str
+    profilePath: str
+    pricingSource: Optional[str]
 
 
 @dataclass
@@ -107,6 +112,7 @@ class InstanceData:
     safety_margin_default: float
     last_updated: Optional[str] = None
     pricing_region: Optional[str] = None
+    pricing_source: Optional[str] = None
 
 
 def _bytes_to_gb(n_bytes: float) -> float:

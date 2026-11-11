@@ -50,26 +50,37 @@ Standalone fallback:
 1. Configure provider defaults:
    - `hf cloud providers configure sagemaker`
    - `hf cloud providers configure vertex`
+   - `hf cloud providers configure foundry` (install `hf-cloud[foundry]` first)
 2. Compare instance price estimates before deployment:
    - `hf cloud estimate MODEL_ID`
    - `hf cloud estimate MODEL_ID --provider sagemaker`
    - `hf cloud estimate MODEL_ID --provider vertex`
+   - `hf cloud foundry estimate MODEL_ID --profile PROFILE.json`
 3. Deploy a model:
    - `hf cloud sagemaker deploy MODEL_ID --name NAME`
    - `hf cloud vertex deploy MODEL_ID --name NAME`
+   - `hf cloud foundry deploy MODEL_ID --name NAME --profile PROFILE.json --dry-run`
+   - Remove `--dry-run` to deploy a compatible published Foundry model/template.
 4. Verify and test:
    - `hf cloud sagemaker status DEPLOYMENT_ID`
    - `hf cloud vertex status DEPLOYMENT_ID`
+   - `hf cloud foundry status DEPLOYMENT_ID`
    - `hf cloud sagemaker invoke DEPLOYMENT_ID --input "Hello"`
 5. Clean up:
    - `hf cloud sagemaker delete DEPLOYMENT_ID`
    - `hf cloud vertex delete DEPLOYMENT_ID`
+   - `hf cloud foundry delete DEPLOYMENT_ID`
 
 ## Useful commands
 - `hf cloud ls`
 - `hf cloud providers ls`
 - `hf cloud sagemaker ls`
 - `hf cloud vertex ls`
+- `hf cloud foundry ls`
+
+Foundry scope options (`--subscription-id`, `--resource-group`, `--account`) go
+before the subcommand. Profiles refer to published registry model/template assets;
+HF Cloud does not publish arbitrary Hub models to Foundry or use Hub tokens there.
 
 Tip: if you use standalone installation, replace `hf cloud` with `hf-cloud`.
 """

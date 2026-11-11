@@ -9,6 +9,41 @@ from hf_cloud.core.deployment import Deployment, DeploymentStatus
 from hf_cloud.core.state import StateManager
 
 
+def test_foundry_refresh_scopes_accounts_and_preserves_upstream_model(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    state = StateManager(tmp_path / "state.json")
+    original = _deployment(
+        "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.CognitiveServices/accounts/one/managedComputeDeployments/test",
+        "foundry",
+        "eastus",
+    )
+    original.model_id = "org/model"
+    original.config = {
+        "subscription_id": "sub",
+        "resource_group": "rg",
+        "account_name": "one",
+        "model_asset_id": "asset",
+        "endpoint": "https://one.example.com",
+    }
+    state.add_deployment(original)
+    monkeypatch.setattr("hf_cloud.cli.global_commands.StateManager", lambda: state)
+    monkeypatch.setattr(
+        "hf_cloud.providers.foundry.client.FoundryClient",
+        lambda: SimpleNamespace(subscription_id=None, resource_group=None, account_name=None),
+    )
+    returned = Deployment.from_dict(original.to_dict())
+    returned.model_id = "asset"
+    factory = Mock(return_value=Mock(list_deployments=Mock(return_value=[returned])))
+    monkeypatch.setattr("hf_cloud.providers.foundry.FoundryProvider", factory)
+    result = CliRunner().invoke(app, ["ls", "--refresh", "--provider", "foundry"])
+    assert result.exit_code == 0, result.output
+    factory.assert_called_once_with(
+        subscription_id="sub", resource_group="rg", account_name="one", endpoint="https://one.example.com"
+    )
+    assert state.list_deployments("foundry")[0]["model_id"] == "org/model"
+
+
 def _deployment(name, provider, region):
     return Deployment(name, name, provider, "gpt2", DeploymentStatus.RUNNING, {}, region=region)
 

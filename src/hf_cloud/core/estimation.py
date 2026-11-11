@@ -70,6 +70,13 @@ def select_instances(
         for warning in estimate.warnings:
             if warning not in selection.warnings:
                 selection.warnings.append(warning)
+        context_limit = instance.get("maxContextLength")
+        context = (estimate.raw.get("kv_cache") or {}).get("max_model_len") or options.max_model_len
+        if context_limit and context and context > context_limit:
+            warning = f"{instance.get('provider', '')} template {instance['instanceType']} supports at most {context_limit} context tokens; this estimate requests {context}."
+            if warning not in selection.warnings:
+                selection.warnings.append(warning)
+            continue
         if fit.fits:
             selection.matches.append(InstanceMatch(instance, estimate))
             if not show_all:

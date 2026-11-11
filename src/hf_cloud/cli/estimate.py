@@ -18,6 +18,8 @@ from rich.table import Table
 from rich.text import Text
 
 from hf_cloud.core.estimation import InstanceMatch, compare_instances, hourly_price
+from hf_cloud.core.exceptions import ConfigurationError
+from hf_cloud.providers.foundry.profiles import profile_catalog
 from hf_cloud.utils.hf_mem import (
     HF_MEM_VERSION,
     EstimateOptions,
@@ -54,6 +56,19 @@ def _instance_output(match: InstanceMatch) -> dict[str, Any]:
         "weightsFormat": estimate.raw.get("format"),
         "acceleratorType": instance.get("acceleratorType"),
     }
+    if instance.get("provider") == "foundry":
+        output.update(
+            {
+                key: instance.get(key)
+                for key in (
+                    "modelAssetId",
+                    "deploymentTemplateId",
+                    "profilePath",
+                    "pricingSource",
+                    "maxContextLength",
+                )
+            }
+        )
     return output
 
 
@@ -158,14 +173,17 @@ def _print_deploy_command(model_id: str, instance: dict[str, Any], options: Esti
     ):
         return
     provider = instance["provider"]
-    if provider not in {"sagemaker", "vertex"}:
+    if provider not in {"sagemaker", "vertex", "foundry"}:
         return
-    instance_flag = "--machine-type" if provider == "vertex" else "--instance-type"
     parts = [
         shlex.join(["hf-cloud", provider, "deploy", model_id]),
         "--name my-endpoint",
-        shlex.join([instance_flag, instance["instanceType"]]),
     ]
+    if provider == "foundry":
+        parts.append(shlex.join(["--profile", instance["profilePath"]]))
+    else:
+        instance_flag = "--machine-type" if provider == "vertex" else "--instance-type"
+        parts.append(shlex.join([instance_flag, instance["instanceType"]]))
     if provider == "vertex" and instance.get("acceleratorType"):
         parts.extend(
             [
@@ -178,7 +196,12 @@ def _print_deploy_command(model_id: str, instance: dict[str, Any], options: Esti
         command = " \\\n  ".join(parts)
     console.print("\nDeploy cheapest instance", style="bold")
     console.print(Text(command, style="cyan"), soft_wrap=True)
-    console.print("Match the deployment engine, sharding and workload to this estimate.", style="dim")
+    note = (
+        "The published template controls the runtime and context settings."
+        if provider == "foundry"
+        else "Match the deployment engine, sharding and workload to this estimate."
+    )
+    console.print(note, style="dim")
 
 
 def estimate(
@@ -189,6 +212,15 @@ def estimate(
             "--provider",
             "-p",
             help="Provider to include; repeat to compare selected providers",
+            rich_help_panel="Comparison",
+        ),
+    ] = None,
+    foundry_profile: Annotated[
+        Optional[Path],
+        typer.Option(
+            "--foundry-profile",
+            "--profile",
+            help="Published Foundry model/template profile to include in this comparison",
             rich_help_panel="Comparison",
         ),
     ] = None,
@@ -272,14 +304,31 @@ def estimate(
         options.validate()
         validate_safety_margin(safety_margin)
         available = list_instance_providers()
+        if foundry_profile is not None:
+            available = [*available, "foundry"]
         selected = list(dict.fromkeys(name.lower() for name in providers)) if providers else available
+        if "foundry" in selected and foundry_profile is None:
+            raise HfMemError(
+                "Foundry estimates require --foundry-profile (or --profile) with published template GPU counts, context limit, and pricing metadata"
+            )
+        if "foundry" in selected and (
+            options.revision or options.file or options.format not in (None, "safetensors")
+        ):
+            raise HfMemError(
+                "Published Foundry profiles cannot follow --revision, --file, or non-Safetensors weight selection"
+            )
         unsupported = [name for name in selected if name not in available]
         if unsupported or not selected:
             raise HfMemError(
                 "No estimate catalog for requested providers",
                 details=f"Unsupported: {', '.join(unsupported) or 'none available'}. Available: {', '.join(available)}",
             )
-        catalogs = [load_instance_data(provider) for provider in selected]
+        catalogs = [
+            profile_catalog(foundry_profile, model_id)
+            if provider == "foundry"
+            else load_instance_data(provider)
+            for provider in selected
+        ]
         if not json_output:
             console.print(
                 "Instance estimate" if len(selected) == 1 else "Cross-provider estimate", style="bold"
@@ -318,11 +367,15 @@ def estimate(
             "sort": sort.value,
             "safetyMargin": safety_margin,
             "pricing": {
-                "source": "bundled-catalogs",
+                "source": "catalogs-and-profiles" if "foundry" in selected else "bundled-catalogs",
                 "currency": "USD",
                 "unit": "hour",
                 "catalogs": {
-                    catalog.provider: {"lastUpdated": catalog.last_updated, "region": catalog.pricing_region}
+                    catalog.provider: {
+                        "lastUpdated": catalog.last_updated,
+                        "region": catalog.pricing_region,
+                        **({"source": catalog.pricing_source} if catalog.pricing_source else {}),
+                    }
                     for catalog in catalogs
                 },
             },
@@ -347,13 +400,16 @@ def estimate(
                 _print_comparison(output["instances"], len(rows), sort)
             else:
                 console.print("No compatible instances found.", style="yellow")
-            console.print("\nPricing: bundled catalog estimates in USD/hour; not live quotes.", style="dim")
+            basis = "catalog and supplied profile" if "foundry" in selected else "bundled catalog"
+            console.print(f"\nPricing: {basis} estimates in USD/hour; not live quotes.", style="dim")
             for catalog in catalogs:
                 console.print(
                     f"  {catalog.provider}: {catalog.last_updated or 'date unknown'} · "
                     f"{catalog.pricing_region or 'pricing region unspecified'}",
                     style="dim",
                 )
+                if catalog.pricing_source:
+                    console.print(Text(f"  Price source: {catalog.pricing_source}", style="dim"))
             if output["unpricedCount"]:
                 console.print(
                     f"{output['unpricedCount']} compatible instances have no usable price; excluded from the price range.",
@@ -364,7 +420,7 @@ def estimate(
                 _print_deploy_command(model_id, cheapest, options)
         if "error" in output:
             raise typer.Exit(code=1)
-    except HfMemError as error:
+    except (HfMemError, ConfigurationError) as error:
         if json_output:
             typer.echo(json.dumps({"error": error.message, "details": error.details}))
         else:

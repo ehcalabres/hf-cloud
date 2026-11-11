@@ -14,7 +14,7 @@ Preferred method: install and run it as an HF CLI extension (`hf cloud ...`). Mo
 In the examples below, replace `<cli>` with either `hf-cloud` or `hf cloud`.
 
 Both installation modes include the AWS SageMaker and Google Cloud Vertex AI
-dependencies by default. Azure ML is not yet implemented.
+dependencies by default. Microsoft Foundry uses the optional `foundry` extra.
 
 ## Hugging Face CLI extension
 
@@ -78,6 +78,28 @@ The report identifies releases that require a newer Python version. Other depend
 constraints are left to your package manager; an available release is not a guarantee
 of compatibility. Set `HF_CLOUD_NO_UPDATE_CHECK=1` to disable automatic checks.
 Explicit `providers versions` commands still check PyPI.
+
+## Microsoft Foundry
+
+Microsoft Foundry managed compute is supported through the optional `foundry`
+extra. It deploys published Hugging Face catalog models and deployment templates
+on dedicated GPU capacity, using the Foundry account's unified inference endpoint.
+
+```bash
+uv sync --extra foundry
+az login
+uv run hf-cloud providers configure foundry
+uv run hf-cloud foundry deploy Qwen/Qwen3-32B --name qwen3-32b \
+  --profile examples/foundry/qwen3-32b-h100.json --dry-run
+```
+
+Remove `--dry-run` after selecting the compatible assets for your project. Foundry
+commands include `deploy`, `ls`, `describe`, `status`, `invoke`, `update`, `logs`,
+`delete`, and profile-based `estimate`. See the [Foundry guide](docs/foundry.md) for
+raw model/template inputs, authentication, monitoring, pricing comparisons, and
+the differences from older Azure ML deployments. This uses Foundry's current
+managed-compute preview; arbitrary/private Hub repositories aren't published by
+HF Cloud.
 
 ## Agent Skills
 
@@ -207,8 +229,10 @@ included in JSON. Rates can differ by region, serving service, and discounts;
 storage, network, and other charges are outside this comparison. Verify a
 deployment's price with [AWS pricing](https://aws.amazon.com/sagemaker/ai/pricing/)
 or [Google Cloud pricing](https://cloud.google.com/vertex-ai/pricing).
-Cloud capacity and quotas are not checked. Azure is excluded until it has an
-instance catalog.
+Cloud capacity and quotas are not checked. Include a published Foundry template
+with `--foundry-profile PROFILE.json` to compare it alongside the bundled catalogs.
+See [Foundry estimates](docs/foundry.md#compare-template-estimates) for template
+metadata and pricing inputs.
 
 Global JSON output includes `cheapest`, `mostExpensive`, `totalCompatible`,
 `pricedCount`, `unpricedCount`, ranked `instances` with their `provider`, and
@@ -310,6 +334,8 @@ dependencies from HF-Cloud's provider SDKs.
 | `<cli> ls` | List all deployments (all providers) |
 | `<cli> providers ls` | List available providers |
 | `<cli> providers configure <provider>` | Configure provider credentials |
+| `<cli> providers versions` | Inspect installed provider SDKs and stable PyPI releases |
+| `<cli> foundry update <id> --instance-count N` | Scale Foundry model instances |
 | `<cli> skills preview` | Preview generated SKILL.md for AI assistants |
 | `<cli> skills add` | Install SKILL.md and optionally symlink to assistant folders |
 
@@ -317,7 +343,7 @@ dependencies from HF-Cloud's provider SDKs.
 
 - **AWS SageMaker** - Fully implemented
 - **Google Cloud Vertex AI** - Fully implemented
-- **Azure ML** - Work in progress
+- **Microsoft Foundry** - Published Hugging Face templates on managed compute (preview)
 
 ## Provider-Specific Examples
 
@@ -408,7 +434,7 @@ a write fails. Simultaneous CLI processes are not coordinated by a file lock.
 You will also need to have the respective cloud provider authentication set up, so that `hf-cloud` can access your account. Current provider-specific requirements:
 
 - **AWS SageMaker**: AWS credentials configured via AWS CLI or environment variables.
-- **Azure ML**: Azure CLI logged in or service principal set up.
+- **Microsoft Foundry**: Foundry optional extra installed; `az login`, managed identity, or service principal credentials; a configured AIServices account and approved managed-compute GPU quota.
 - **Google Cloud Vertex AI**: Google Cloud SDK authenticated or service account key set up.
 
 ## Development

@@ -5,6 +5,7 @@ from typing import Annotated, Optional
 import typer
 from rich.console import Console
 from rich.table import Table
+from rich.text import Text
 
 from hf_cloud.core.config import Config
 from hf_cloud.core.state import StateManager
@@ -16,7 +17,7 @@ console = Console()
 def list_all_deployments(
     provider: Annotated[
         Optional[str],
-        typer.Option("--provider", "-p", help="Filter by provider (sagemaker, azure, vertex)"),
+        typer.Option("--provider", "-p", help="Filter by provider (sagemaker, vertex, foundry)"),
     ] = None,
     status: Annotated[
         Optional[str],
@@ -34,13 +35,56 @@ def list_all_deployments(
         console.print("[dim]Refreshing deployment status from cloud providers...[/dim]")
         provider_names = [provider] if provider else ProviderRegistry.list_providers()
         for provider_name in provider_names:
+            if provider_name == "foundry":
+                from hf_cloud.providers.foundry import FoundryProvider
+                from hf_cloud.providers.foundry.client import FoundryClient
+
+                known = state.list_deployments(provider="foundry")
+                scope_keys = ("subscription_id", "resource_group", "account_name")
+                endpoints = {
+                    tuple(d.get("config", {}).get(key) for key in scope_keys): d.get("config", {}).get(
+                        "endpoint"
+                    )
+                    for d in known
+                }
+                scopes = {tuple(d.get("config", {}).get(key) for key in scope_keys) for d in known}
+                scopes = {scope for scope in scopes if all(scope)}
+                default = FoundryClient()
+                if all(getattr(default, key) for key in scope_keys):
+                    scopes.add(tuple(getattr(default, key) for key in scope_keys))
+                if not scopes:
+                    console.print(
+                        "  [yellow]⚠[/yellow] foundry: configure an account with hf-cloud providers configure foundry"
+                    )
+                for scope in sorted(scopes):
+                    try:
+                        scoped_provider = FoundryProvider(
+                            **dict(zip(scope_keys, scope)), endpoint=endpoints.get(scope)
+                        )
+                        deployments = scoped_provider.list_deployments()
+                        for deployment in deployments:
+                            old = next(
+                                (
+                                    d
+                                    for d in known
+                                    if d["deployment_id"].lower() == deployment.deployment_id.lower()
+                                ),
+                                None,
+                            )
+                            if old and old.get("config", {}).get("model_asset_id") == deployment.config.get(
+                                "model_asset_id"
+                            ):
+                                deployment.model_id = old["model_id"]
+                        state.add_deployments(deployments)
+                        console.print(Text(f"  ✓ foundry ({scope[2]})", style="green"))
+                    except Exception as e:
+                        console.print(Text(f"  ⚠ foundry ({scope[2]}): {e}", style="yellow"))
+                continue
             if provider_name == "sagemaker":
                 from hf_cloud.providers.sagemaker import SageMakerProvider
                 from hf_cloud.providers.sagemaker.client import SageMakerClient
 
-                regions = {
-                    d["region"] for d in state.list_deployments(provider="sagemaker") if d.get("region")
-                }
+                regions = {d["region"] for d in state.list_deployments(provider="sagemaker") if d.get("region")}
                 try:
                     regions.add(SageMakerClient.resolve_region())
                 except Exception as e:
@@ -123,6 +167,11 @@ def list_providers() -> None:
         # Check if provider has dependencies installed
         try:
             ProviderRegistry.get_provider(provider)
+            if provider == "foundry":
+                from importlib.metadata import version
+
+                ProviderRegistry.get_provider(provider).client.require_scope()
+                version("azure-mgmt-cognitiveservices")
             status = "[green]✓ ready[/green]"
         except Exception:
             status = "[yellow]○ not configured[/yellow]"
@@ -135,7 +184,7 @@ def list_providers() -> None:
 
 @providers_app.command(name="configure")
 def configure_provider(
-    provider: Annotated[str, typer.Argument(help="Provider name (sagemaker, azure, vertex)")],
+    provider: Annotated[str, typer.Argument(help="Provider name (sagemaker, vertex, foundry)")],
 ) -> None:
     """Configure credentials and defaults for a provider."""
     if provider not in ProviderRegistry.list_providers():
@@ -174,30 +223,25 @@ def configure_provider(
 
         config.set_provider_config(provider, new_config)
 
-    # TODO: Check configs exposed once Microsoft and Google SDKs are integrated
-    elif provider == "azure":
-        # Azure configuration
+    elif provider == "foundry":
         subscription_id = typer.prompt(
-            "Azure Subscription ID",
-            default=current_config.get("subscription_id", ""),
+            "Azure Subscription ID", default=current_config.get("subscription_id", "")
         )
-        default_resource_group = typer.prompt(
-            "Default Resource Group",
-            default=current_config.get("default_resource_group", ""),
+        resource_group = typer.prompt("Azure Resource Group", default=current_config.get("resource_group", ""))
+        account_name = typer.prompt(
+            "Foundry account name (AIServices)", default=current_config.get("account_name", "")
         )
-        default_workspace = typer.prompt(
-            "Default ML Workspace",
-            default=current_config.get("default_workspace", ""),
+        endpoint = typer.prompt(
+            "Foundry account base endpoint (optional)", default=current_config.get("endpoint", "")
         )
-
-        config.set_provider_config(
-            provider,
-            {
-                "subscription_id": subscription_id,
-                "default_resource_group": default_resource_group,
-                "default_workspace": default_workspace,
-            },
-        )
+        new_config = {
+            "subscription_id": subscription_id,
+            "resource_group": resource_group,
+            "account_name": account_name,
+        }
+        if endpoint:
+            new_config["endpoint"] = endpoint
+        config.set_provider_config(provider, new_config)
 
     elif provider == "vertex" or provider == "vertex":
         # vertex/Vertex AI configuration

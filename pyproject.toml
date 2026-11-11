@@ -25,6 +25,14 @@ dependencies = [
 requires = ["uv_build>=0.9.27,<0.10.0"]
 build-backend = "uv_build"
 
+[project.optional-dependencies]
+foundry = [
+    "azure-mgmt-cognitiveservices==15.0.0b2",
+    "azure-identity>=1.27.0,<2",
+    "azure-mgmt-monitor>=7.0.0,<8",
+    "httpx>=0.28.1,<1",
+]
+
 [dependency-groups]
 dev = [
     "pytest>=9.0.2",
