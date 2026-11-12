@@ -140,7 +140,7 @@ def test_failed_read_does_not_start_billable_creation(provider):
 @pytest.mark.parametrize(
     "update",
     [
-        {"model_asset_id": None},
+        {"model_asset_id": "not-a-published-model"},
         {"deployment_template": "guess"},
         {"accelerator_type": "Standard_NC24"},
         {"instance_count": 0},
@@ -218,7 +218,7 @@ def test_invoke_uses_entra_and_forces_deployment_name_without_following_redirect
     monkeypatch.setattr(httpx, "Client", constructor)
     assert "choices" in provider.invoke(provider.client.resource_id("test"), {"messages": [], "model": "wrong"})
     args = http.post.call_args
-    assert args.args[0] == "https://hf-foundry.services.ai.azure.com/managed-deployments/test/chat/completions"
+    assert args.args[0] == "https://hf-foundry.services.ai.azure.com/openai/v1/chat/completions"
     assert args.kwargs["json"]["model"] == "test"
     assert args.kwargs["headers"] == {"Authorization": "Bearer test-token"}
     provider.client.credential.get_token.assert_called_once_with("https://cognitiveservices.azure.com/.default")
@@ -375,3 +375,42 @@ def test_default_profile_is_valid_for_documented_dry_run(provider):
     data = load_profile(path, "Qwen/Qwen3-32B")
     assert data["acceleratorType"] == "H100_80GB"
     assert profile_catalog(path, "Qwen/Qwen3-32B").instances[0]["numGpu"] == 1
+
+
+def test_hub_only_deploy_resolves_publisher_defaults(provider, monkeypatch):
+    from hf_cloud.providers.azure_catalog import PublishedModel
+
+    published = PublishedModel(
+        "org/model", "azure-huggingface", "example", "1", "text-generation", TEMPLATE, (TEMPLATE,)
+    )
+    provider.catalog = Mock()
+    provider.catalog.resolve.return_value = published
+    provider.catalog.foundry_template.return_value = {**CONFIG, "accelerators_per_instance": 1}
+    operations = provider.client.management.managed_compute_deployments
+    operations.get.side_effect = [AzureError(404), resource(provider)]
+    result = provider.deploy("org/model", "test", {})
+    assert result.status == DeploymentStatus.RUNNING
+    provider.catalog.resolve.assert_called_once_with("org/model", "foundry", None)
+    assert operations.begin_create_or_update.call_args.kwargs["resource"]["properties"]["model"] == MODEL
+
+
+def test_cli_hub_only_dry_run_resolves_assets_without_provisioning(provider, monkeypatch):
+    from hf_cloud.providers.azure_catalog import PublishedModel
+
+    provider.catalog = Mock()
+    provider.catalog.resolve.return_value = PublishedModel("org/model", "azure-huggingface", "example", "1")
+    provider.catalog.foundry_template.return_value = {**CONFIG, "accelerators_per_instance": 1}
+    monkeypatch.setattr("hf_cloud.cli.foundry.FoundryProvider", Mock(return_value=provider))
+    result = CliRunner().invoke(app, ["foundry", *SCOPE, "deploy", "org/model", "--name", "test", "--dry-run"])
+    assert result.exit_code == 0, result.stdout
+    data = json.loads(result.stdout)
+    assert data["resource"]["properties"]["deploymentTemplate"] == TEMPLATE
+    provider.client.management.managed_compute_deployments.begin_create_or_update.assert_not_called()
+
+
+def test_discovery_failure_stops_before_billable_operations(provider):
+    provider.catalog = Mock()
+    provider.catalog.resolve.side_effect = ConfigurationError("Model is not published")
+    with pytest.raises(ConfigurationError, match="not published"):
+        provider.deploy("org/model", "test", {})
+    provider.client.management.managed_compute_deployments.begin_create_or_update.assert_not_called()

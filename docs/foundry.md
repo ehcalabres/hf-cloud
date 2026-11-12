@@ -1,145 +1,143 @@
 # Microsoft Foundry managed compute
 
-HF Cloud implements the current **Foundry managed compute** deployment path described
-in [Microsoft's Hugging Face guide](https://learn.microsoft.com/en-us/azure/foundry/foundry-models/how-to/hugging-face-models)
-and the [HF managed-compute guide](https://huggingface.co/docs/microsoft-azure/guides/managed-compute-foundry).
-This uses `Microsoft.CognitiveServices/accounts/managedComputeDeployments` and
-`GlobalManagedCompute`. It does not create Azure ML managed online endpoints.
+This backend uses current Foundry managed compute: published Hugging Face models,
+compatible deployment templates and dedicated accelerators. Microsoft supplies the
+runtime, image and security patching. HF Cloud does not maintain containers or
+publish arbitrary Hub weights. See the [Microsoft guide](https://learn.microsoft.com/en-us/azure/foundry/foundry-models/how-to/hugging-face-models)
+and [Hugging Face guide](https://huggingface.co/docs/microsoft-azure/guides/managed-compute-foundry).
 
-Microsoft manages the runtime and GPU topology. You select a published registry
-model, a compatible deployment template, an accelerator family, and model instance
-count. The template determines GPUs per instance, runtime, and context settings.
-See [Microsoft's architecture and template overview](https://learn.microsoft.com/en-us/azure/foundry/concepts/managed-compute-overview).
+For an Azure ML workspace or Foundry classic hub-based project, use the
+[Azure ML catalog backend](azureml.md). The two catalogs and quota pools differ;
+HF Cloud requires an explicit backend selection.
 
-For direct deployment of a Hub ID with a GPU VM and replica count, use the
-primary [Azure ML backend](azureml.md). Foundry is retained as a separate advanced
-preview for published catalog models and managed-compute templates.
-
-## Setup
+## Setup and first deployment
 
 ```bash
 uv sync --extra foundry
 az login
 uv run hf-cloud providers configure foundry
+uv run hf-cloud foundry catalog Qwen/Qwen3-32B
+uv run hf-cloud foundry deploy Qwen/Qwen3-32B --name qwen-test --dry-run
 ```
 
-For pip installations use `pip install 'hf-cloud[foundry]'`. The optional extra pins
-`azure-mgmt-cognitiveservices==15.0.0b2`, the preview SDK documented by Microsoft;
-its managed-compute operations use API `2026-03-15-preview`. Azure Identity and
-Azure Monitor clients are included. The Cognitive Services and Monitor packages
-are specific to Foundry; Azure Identity is also used by the primary Azure ML backend.
-
-Use an existing Foundry account of kind `AIServices`, rather than an Azure ML
-workspace or an OpenAI-only account. Configure its subscription, resource group,
-account name, and optionally its HTTPS account base endpoint. `DefaultAzureCredential`
-supports Azure CLI login, managed identities, and service principal environment
-credentials. Credentials and Hub tokens are never stored in the deployment state.
-
-You can also set `AZURE_SUBSCRIPTION_ID`, `AZURE_RESOURCE_GROUP`,
-`AZURE_FOUNDRY_ACCOUNT`, and optionally `AZURE_FOUNDRY_ENDPOINT`.
-Explicit scope options go **before** the subcommand:
+Configure an existing Foundry **AIServices account**, with `subscription_id`,
+`resource_group` and `account_name`. Its name is the Foundry resource/account name,
+rather than the project name. Configure the optional HTTPS base `endpoint` only
+when needed. Environment variables `AZURE_SUBSCRIPTION_ID`, `AZURE_RESOURCE_GROUP`,
+`AZURE_FOUNDRY_ACCOUNT` and `AZURE_FOUNDRY_ENDPOINT` override saved settings.
+Explicit scope options override these and go **before the subcommand**:
 
 ```bash
-hf-cloud foundry --subscription-id SUBSCRIPTION_ID --resource-group RESOURCE_GROUP \
-  --account ACCOUNT_NAME status DEPLOYMENT_NAME
+hf-cloud foundry --subscription-id SUBSCRIPTION --resource-group RG --account ACCOUNT ls
 ```
 
-Creating/scaling/deleting requires the control-plane role described in Microsoft's
-guide (for example Cognitive Services Contributor). Inference uses Foundry User
-and the account-level Entra token scope. Managed-compute GPU quota is separate
-from VM quota. This feature is currently a public preview.
+The optional extra pins the preview management SDK
+`azure-mgmt-cognitiveservices==15.0.0b2` and includes Azure Identity, Monitor and
+HTTP clients. Use the equivalent `pip install 'hf-cloud[foundry]'` for pip installs.
+Deployments use API `2026-03-15-preview`; model/template discovery uses the Azure ML
+SDK already included in HF Cloud. Authenticate with `DefaultAzureCredential`, for
+example through `az login`.
 
-## Select published assets
+Your identity needs account deployment-management permissions, such as Cognitive
+Services Contributor. Inference needs Foundry User. You also need available
+**Foundry managed compute quota**, which is separate from Azure ML VM quota.
+This service is in public preview; check its availability and terms before use.
+HF Cloud does not create accounts or assign roles.
 
-In the Foundry model catalog, filter by **Hugging Face**, **Managed compute**, and
-**Available in my Project**. Copy the complete model asset ID and compatible
-deployment-template ID from the model card/deployment wizard, plus the template's
-accelerator family. HF Cloud accepts A100_80GB, H100_80GB, and MI300_192GB.
+## Hub IDs, models and templates
+
+`foundry catalog MODEL_ID` uses the
+[documented Hub-to-Azure lookup](https://huggingface.co/docs/microsoft-azure/foundry/models),
+then verifies the published model in the `azure-huggingface` registry. It lists
+that model version's allowed template references and reports the publisher's
+default selection, when unambiguous. If the lookup points to the classic
+`HuggingFace` registry, the command directs you to `azureml` instead.
+
+`foundry deploy MODEL_ID --name NAME` resolves the Hub ID and uses the published
+default template and accelerator family. With only one allowed choice, that choice
+can be used. HF Cloud never guesses between multiple choices with no default or
+claims the publisher's default is the cheapest. To choose explicitly:
 
 ```bash
-hf-cloud foundry deploy Qwen/Qwen3-32B --name qwen3-32b \
-  --model-asset-id azureml://registries/azure-huggingface/models/qwen--qwen3-32b/versions/3 \
-  --template azureml://registries/azure-huggingface/deploymenttemplates/qwen--qwen3-32b--40k-nvidia-h100/labels/latest \
-  --accelerator-type H100_80GB --instance-count 1 --dry-run
+hf-cloud foundry deploy Qwen/Qwen3-32B --name qwen-test \
+  --template TEMPLATE_NAME_FROM_CATALOG --accelerator-type H100_80GB --dry-run
 ```
 
-`--dry-run` prints the SDK request without Azure authentication or resource changes.
-Remove it to deploy. The Hub ID records the intended upstream model; HF Cloud
-doesn't guess a registry slug/version from it or automatically publish a Hub repo.
-Alternatively, pass the complete registry model asset URI as the positional model.
-Azure verifies that the selected model, template, and accelerator are compatible.
+The template must be published for the selected model version. Its accelerator
+maps determine supported families and GPUs per model instance. `--instance-count`
+controls model replicas, defaulting to one; it does not change GPUs inside a
+replica. `--catalog-version` selects a specific published model version.
+Automatically resolved model and template references are pinned to concrete
+versions. The default `NoAutoUpgrade` policy preserves the selected model version.
+Change `--version-upgrade-option` explicitly if you want Microsoft's upgrade policy.
 
-To reuse your team's published references, put them in a JSON profile:
+A dry run reads the public lookup and authenticated registry metadata and prints
+the exact resource request. It creates no resources or local deployment state.
+It cannot verify available project quota or reserve capacity. Remove `--dry-run`
+to provision. The command waits, re-reads the result and only reports success for
+`Succeeded` with the requested accelerator and replica count. Failures exit nonzero;
+inspect and remove any resources left by Azure.
+
+## Advanced profiles and explicit references
+
+Reusable profiles remain available when you want to pin model/template inputs,
+share known template metadata, or preview without catalog access:
 
 ```bash
-hf-cloud foundry deploy Qwen/Qwen3-32B --name qwen3-32b \
+hf-cloud foundry deploy Qwen/Qwen3-32B --name qwen-test \
   --profile examples/foundry/qwen3-32b-h100.json --dry-run
 ```
 
-A profile requires `modelId`, `modelAssetId`, `deploymentTemplateId`, and
-`acceleratorType`. It is an HF Cloud wrapper around published asset references,
-not an Azure template publishing format. The example IDs are from the HF guide;
-select the current compatible references in your project before provisioning.
-Both `/versions/...` and `/labels/...` registry references are supported. Prefer
-versioned model/template references for reproducibility; labels can move.
+With a complete explicit profile, dry run is offline. Review sample asset versions
+and availability in your project before provisioning; samples are not automatically
+refreshed. Profiles may also include context and price data for estimates below.
+Alternatively, provide the complete `--model-asset-id`, `--template` asset URI and
+`--accelerator-type`. Those references must be compatible published assets.
 
-The default model version policy is `NoAutoUpgrade`. Use `--version-upgrade-option`
-to opt into `OnceNewDefaultVersionAvailable` or `OnceCurrentVersionExpired`.
-Runtime patching remains managed by Microsoft.
+Published catalog weights are required. Arbitrary private Hub models and Hub
+tokens are not supported by this deployment path. For published gated models,
+use Azure ML / Foundry classic as described in the [gated model guide](azureml.md#published-gated-models).
 
-## Deploy, inspect, invoke, scale, delete
+## Verify, invoke and clean up
 
 ```bash
-hf-cloud foundry deploy Qwen/Qwen3-32B --name qwen3-32b \
-  --profile examples/foundry/qwen3-32b-h100.json
 hf-cloud foundry ls
-hf-cloud foundry describe qwen3-32b
-hf-cloud foundry status qwen3-32b
-hf-cloud foundry invoke qwen3-32b --input "What is the capital of France?"
-hf-cloud foundry update qwen3-32b --instance-count 2
-hf-cloud foundry logs qwen3-32b --tail 50
-hf-cloud foundry delete qwen3-32b --yes
-hf-cloud ls --refresh --provider foundry
-hf-cloud providers versions --provider foundry
+hf-cloud foundry describe qwen-test
+hf-cloud foundry status qwen-test
+hf-cloud foundry invoke qwen-test --input 'What is GPU memory?'
+hf-cloud foundry update qwen-test --instance-count 2
+hf-cloud foundry logs qwen-test --tail 50
+hf-cloud foundry delete qwen-test
 ```
 
-Deployment and scaling wait for the operation and re-read provisioning status.
-Only `Succeeded` is saved as `running`; failed operations return a nonzero exit
-code with Azure's error or provisioning details. Existing deployment names are
-not overwritten by `deploy`. Scaling patches capacity while preserving the model
-and template. Deletion waits for the managed deployment to be removed; it never
-deletes the account, project, or registry assets. Failed resources are retained
-for inspection and explicit cleanup.
-
-Names and full ARM deployment IDs are accepted. Local records use full ARM IDs so
-the same deployment name in different accounts/subscriptions doesn't collide.
-Global refresh visits the configured account and accounts in local records.
-
-Inference uses the account's dedicated managed-deployment route and Entra ID,
-without retrieving API keys. Chat uses the deployment name in the `model` field.
-For other model routes, provide the path from the model's documentation and a JSON
-request. For example, an embeddings runtime can use:
+Chat invocation uses Microsoft Entra authentication through the account's
+`https://ACCOUNT.services.ai.azure.com/openai/v1/` endpoint. The OpenAI request's
+`model` field is the **deployment name**. For embeddings and other OpenAI routes,
+use the appropriate `--route` and `--json-file`:
 
 ```bash
 hf-cloud foundry invoke EMBEDDINGS_DEPLOYMENT --route embeddings --json-file request.json
 ```
 
-Requests use HTTPS, never follow redirects, and don't support streaming in this
-JSON command. Unsupported chat routes can return 404; select the model's actual
-route rather than assuming every model supports chat completions.
+Non-OpenAI routes use the dedicated managed-deployment route. Route inputs must be
+relative paths; credentials are never sent to arbitrary URLs or redirects.
+JSON invocation does not support streaming. Full deployment ARM IDs are checked
+against the selected account, and local state isolates identical names across
+accounts. `hf-cloud ls --refresh` visits the configured account and accounts
+already recorded in local state.
 
-`logs` retrieves **Azure Monitor management activity over the last 24 hours** for
-the selected deployment, with monitoring read permissions. It doesn't claim to
-expose runtime container stdout. Request diagnostics and runtime metrics use the
-Foundry/Azure Monitor surface described in [Microsoft's monitoring guidance](https://learn.microsoft.com/en-us/azure/foundry/how-to/diagnostic-logging).
+Scaling preserves model/template properties and updates replica count. Deletion
+removes only the selected managed-compute deployment, leaving the account and
+project intact. Logs currently report recent Azure Activity Log management events,
+not GPU process stdout. Runtime monitoring depends on the
+[Foundry/Azure Monitor surface](https://learn.microsoft.com/en-us/azure/foundry/how-to/diagnostic-logging).
 
 ## Compare template estimates
 
-Foundry doesn't sell arbitrary VM sizes for this deployment path. A useful
-comparison needs a model-specific template rather than a generic GPU catalog.
-Add `acceleratorsPerInstance` and `maxModelLen` to the profile. Set the context cap
-to the published template limit or a lower conservative limit. A template whose
-context cap is below the requested/inferred context is excluded from matches.
+Foundry pricing is per model instance and template, not an arbitrary Azure VM.
+GPU memory counts alone cannot establish its cost. Keep verified metadata in a
+profile, including `acceleratorsPerInstance`, `maxModelLen`,
+`pricePerInstanceHourUsd`, `pricingSource`, `pricingObservedAt` and `pricingRegion`:
 
 ```bash
 hf-cloud foundry estimate Qwen/Qwen3-32B \
@@ -148,33 +146,17 @@ hf-cloud estimate Qwen/Qwen3-32B \
   --foundry-profile examples/foundry/qwen3-32b-h100.json --max-model-len 4096
 ```
 
-The second command compares SageMaker, Vertex, and the supplied Foundry template
-in the same hf-mem metadata session. Root estimates without a Foundry profile
-continue to use the bundled SageMaker/Vertex catalogs. The cheapest deployment
-hint uses `foundry deploy ... --profile ...` when that template wins.
+The second command compares the supplied template with SageMaker, Vertex and Azure
+ML hardware catalogs in one hf-mem metadata session. A template's declared context
+cap must support the requested workload. The Foundry template itself controls
+runtime/context settings; the estimate does not rewrite it. Unknown prices sort
+last and cannot win cheapest. The launch price in the example profile is historical;
+verify your current rate before using it as a quote. Automatic deployment discovery
+does not infer template pricing or manufacture an estimate from VM prices.
 
-Supply `pricePerInstanceHourUsd`, `pricingSource`, `pricingObservedAt`, and
-`pricingRegion` for price ranking. The rate is per **model instance**, including
-all GPUs in that instance; it is not multiplied by GPU count again. Omit prices
-that you haven't verified: unknown prices sort last and cannot win cheapest.
-Foundry-only output without a usable price cannot declare a cheapest result.
+## Verification
 
-The example contains the historical launch rate for one H100 from
-[Microsoft's June 3, 2026 announcement](https://devblogs.microsoft.com/foundry/announcing-foundry-managed-compute/).
-It is not a live quote. Update the profile for your pricing/region; quotas,
-availability, runtime behavior, and model/template compatibility are checked by
-Azure, not proven by hf-mem's memory assessment.
-
-## Validation
-
-Unit coverage exercises lifecycle errors, name/account scoping, profiles, price
-ranking, context caps, Entra inference, and dry runs. Optional SDK tests run the
-real management client against an in-memory ARM transport, covering request
-serialization, resource deserialization, long-running operations, and failures:
-
-```bash
-uv run --extra foundry pytest tests/integration/test_foundry_sdk.py -q
-```
-
-A real deployment still needs an account, compatible published assets, and approved
-managed-compute quota. These SDK tests create no Azure resources.
+Catalog discovery, ambiguous defaults, offline profiles, SDK resource serialization,
+failed provisioning, scaling and inference routing are covered by offline tests.
+The public model lookup has also been checked against current catalog responses.
+No live Foundry resources were provisioned while implementing this change.

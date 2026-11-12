@@ -61,9 +61,9 @@ Standalone fallback:
 3. Deploy a model:
    - `hf cloud sagemaker deploy MODEL_ID --name NAME`
    - `hf cloud vertex deploy MODEL_ID --name NAME`
-   - `hf cloud azureml deploy MODEL_ID --name NAME --max-model-len 2048 --dry-run`
+   - `hf cloud azureml deploy MODEL_ID --name NAME --dry-run --export-dir ./azure-deployment`
    - Remove `--dry-run` after reviewing the plan to provision an Azure ML endpoint.
-   - `hf cloud foundry deploy MODEL_ID --name NAME --profile PROFILE.json --dry-run`
+   - `hf cloud foundry deploy MODEL_ID --name NAME --dry-run`
    - Remove `--dry-run` to deploy a compatible published Foundry model/template.
 4. Verify and test:
    - `hf cloud sagemaker status DEPLOYMENT_ID`
@@ -86,18 +86,31 @@ Standalone fallback:
 - `hf cloud azureml ls`
 - `hf cloud foundry ls`
 
-Azure ML is the main Microsoft backend. It loads Hub IDs directly using vLLM on
-managed online endpoints. Configure a subscription, resource group and existing
-workspace, or pass `--subscription-id`, `--resource-group`, `--workspace` before
-the subcommand. Use `--hf-token-connection NAME` for a workspace connection with
-an HF_TOKEN secret; never put raw tokens in deployment settings. `--task` selects
-text-generation (default), chat-completion, or feature-extraction. Scaling uses
-`azureml update ID --instance-count N`. Deleting removes the endpoint and all its
-components. Check GPU quotas and clean up failed endpoints too.
+Microsoft paths deploy published catalog assets; HF Cloud does not build images.
+- `azureml` uses an Azure ML workspace or a Foundry classic hub-based project.
+  Run `hf cloud azureml catalog MODEL_ID` to verify publication. Deploy pins the
+  resolved version; `--catalog-version` chooses a specific published version.
+  `--dry-run --export-dir PATH` exports Azure CLI endpoint/deployment definitions.
+  The published model owns the runtime and scoring schema. `--json-file` passes
+  that schema unchanged. `--hf-token-connection NAME` injects a workspace secret
+  for published gated models. Arbitrary private models are not imported.
+- `foundry` uses a current Foundry AIServices account and managed compute (preview).
+  Run `hf cloud foundry catalog MODEL_ID` to discover the published templates.
+  Deploy resolves the Hub ID and publisher defaults automatically. If ambiguous,
+  choose `--template NAME` and `--accelerator-type` from the published options.
+  Explicit asset references and profiles remain available as advanced inputs.
 
-Foundry is a separate advanced catalog/template preview. Foundry scope options
-(`--subscription-id`, `--resource-group`, `--account`) go before the subcommand. Profiles refer to published registry model/template assets;
-HF Cloud does not publish arbitrary Hub models to Foundry or use Hub tokens there.
+Azure ML group options (`--subscription-id`, `--resource-group`, `--workspace`)
+and Foundry group options (`--subscription-id`, `--resource-group`, `--account`)
+go before the subcommand. Catalog discovery needs Azure login even with
+`--dry-run`; no cloud resources are created. Explicit Foundry profiles can be
+previewed offline. The catalogs and quota pools differ; never silently switch
+between them. Check quotas and delete unused or failed endpoints.
+
+Root estimates compare memory fits and catalog prices. Azure ML rows do not prove
+model publication or that the published runtime matches the estimated workload.
+Foundry estimates need template GPU/context/pricing data in a profile; never use
+Azure VM prices for Foundry managed compute.
 
 Tip: if you use standalone installation, replace `hf cloud` with `hf-cloud`.
 """

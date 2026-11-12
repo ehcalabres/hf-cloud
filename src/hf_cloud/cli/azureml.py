@@ -1,4 +1,4 @@
-"""Azure ML managed online endpoints, loading models directly from the Hub."""
+"""Published Hugging Face catalog models on Azure ML managed online endpoints."""
 
 import json
 from contextlib import contextmanager
@@ -15,7 +15,7 @@ from hf_cloud.core.config import Config
 from hf_cloud.core.exceptions import HFCloudError
 from hf_cloud.core.state import StateManager
 from hf_cloud.providers.azureml import AzureMLProvider
-from hf_cloud.providers.azureml.serving import DEFAULT_IMAGE, DEFAULT_INSTANCE, serving_plan
+from hf_cloud.providers.azureml.serving import DEFAULT_INSTANCE
 from hf_cloud.utils.sdk_versions import SdkUpdateCheck
 
 console = Console()
@@ -45,80 +45,110 @@ def _errors():
 
 
 @azureml_app.command()
+def catalog(
+    ctx: typer.Context,
+    model_id: Annotated[str, typer.Argument(help="Hub model ID to look up in the Azure ML catalog")],
+    catalog_version: Annotated[
+        Optional[str], typer.Option("--catalog-version", help="Published catalog version; defaults to latest")
+    ] = None,
+) -> None:
+    """Check catalog availability and resolve a pinned published model; requires az login."""
+    with _errors():
+        typer.echo(
+            json.dumps(ctx.obj.catalog.resolve(model_id, "azureml", catalog_version).to_dict(), indent=2)
+        )
+
+
+def _export_plan(directory: Path, plan: dict) -> None:
+    from hf_cloud.core.storage import write_json_atomic
+
+    paths = [directory / "endpoint.json", directory / "deployment.json"]
+    if any(path.exists() for path in paths):
+        raise ValueError(
+            "Export would overwrite endpoint.json or deployment.json; select an empty export directory"
+        )
+    directory.mkdir(parents=True, exist_ok=True)
+    write_json_atomic(
+        paths[0],
+        {
+            "$schema": "https://azuremlschemas.azureedge.net/latest/managedOnlineEndpoint.schema.json",
+            **plan["endpoint"],
+            "identity": {"type": "system_assigned"},
+        },
+    )
+    write_json_atomic(
+        paths[1],
+        {
+            "$schema": "https://azuremlschemas.azureedge.net/latest/managedOnlineDeployment.schema.json",
+            **plan["deployment"],
+        },
+    )
+
+
+@azureml_app.command()
 def deploy(
     ctx: typer.Context,
-    model_id: Annotated[str, typer.Argument(help="Hugging Face Hub model ID (org/model)")],
+    model_id: Annotated[str, typer.Argument(help="Published Hugging Face Hub model ID (org/model)")],
     name: Annotated[str, typer.Option("--name", "-n", help="New endpoint name")],
-    instance_type: Annotated[Optional[str], typer.Option("--instance-type", "-i")] = None,
+    instance_type: Annotated[
+        Optional[str], typer.Option("--instance-type", "-i", help="VM size supported by the published model")
+    ] = None,
     instance_count: Annotated[int, typer.Option("--instance-count", "-c", min=1)] = 1,
     deployment_name: Annotated[
         str, typer.Option("--deployment-name", help="Component name inside the new endpoint")
     ] = "main",
-    task: Annotated[
-        str, typer.Option("--task", help="text-generation, chat-completion, or feature-extraction")
-    ] = "text-generation",
-    image: Annotated[str, typer.Option("--image", help="Tagged vLLM-compatible serving image")] = DEFAULT_IMAGE,
-    gpu_count: Annotated[
-        Optional[int],
-        typer.Option("--gpu-count", min=1, help="Required for VM sizes outside the bundled catalog"),
+    catalog_version: Annotated[
+        Optional[str],
+        typer.Option("--catalog-version", help="Pin an Azure catalog version (not a Hub revision)"),
     ] = None,
     hf_token_connection: Annotated[
         Optional[str],
-        typer.Option("--hf-token-connection", help="Workspace secret connection containing HF_TOKEN"),
+        typer.Option("--hf-token-connection", help="Workspace secret connection for a published gated model"),
     ] = None,
-    revision: Annotated[Optional[str], typer.Option("--revision")] = None,
-    dtype: Annotated[Optional[str], typer.Option("--dtype")] = None,
-    safety_margin: Annotated[
-        float,
-        typer.Option("--safety-margin", min=0, max=1, help="Reserved GPU memory fraction; must be less than 1"),
-    ] = 0.1,
-    max_model_len: Annotated[Optional[int], typer.Option("--max-model-len", min=1)] = None,
-    batch_size: Annotated[int, typer.Option("--batch-size", min=1)] = 1,
-    kv_cache_dtype: Annotated[str, typer.Option("--kv-cache-dtype")] = "auto",
-    max_num_batched_tokens: Annotated[Optional[int], typer.Option("--max-num-batched-tokens", min=1)] = None,
-    trust_remote_code: Annotated[
+    dry_run: Annotated[
         bool,
         typer.Option(
-            "--trust-remote-code", help="Allow model repository Python code to execute in the serving container"
+            "--dry-run",
+            help="Resolve and print the published deployment plan; reads the catalog, creates no resources",
         ),
     ] = False,
-    dry_run: Annotated[
-        bool, typer.Option("--dry-run", help="Print the serving plan without authentication or provisioning")
-    ] = False,
+    export_dir: Annotated[
+        Optional[Path],
+        typer.Option(
+            "--export-dir",
+            help="Export pinned endpoint/deployment JSON for Azure CLI; use --dry-run to export without deploying",
+        ),
+    ] = None,
 ) -> None:
-    """Deploy a Hub model using vLLM on a dedicated GPU VM."""
+    """Deploy a published catalog model using its provided runtime and scoring configuration."""
     with _errors():
+        provider = ctx.obj
+        if provider.client.deployment_name:
+            raise typer.BadParameter("For a new endpoint, put --deployment-name after deploy")
+        resource_id = provider.client.resource_id(name)
         config = {
             "instance_type": instance_type
             or Config().get_provider_config("azureml").get("default_instance_type")
             or DEFAULT_INSTANCE,
             "instance_count": instance_count,
             "deployment_name": deployment_name,
-            "task": task,
-            "image": image,
-            "gpu_count": gpu_count,
+            "catalog_version": catalog_version,
             "hf_token_connection": hf_token_connection,
-            "revision": revision,
-            "dtype": dtype,
-            "safety_margin": safety_margin,
-            "max_model_len": max_model_len,
-            "batch_size": batch_size,
-            "kv_cache_dtype": kv_cache_dtype,
-            "max_num_batched_tokens": max_num_batched_tokens,
-            "trust_remote_code": trust_remote_code,
         }
-        plan = serving_plan(model_id, name, config)
-        provider = ctx.obj
-        resource_id = provider.client.resource_id(name)
+        plan = provider.prepare_deployment(model_id, name, config)
+        config["catalog_version"] = plan["deployment"]["model"].rsplit("/", 1)[-1]
+        if export_dir:
+            _export_plan(export_dir, plan)
         if dry_run:
             typer.echo(json.dumps({"resourceId": resource_id, **plan}, indent=2))
             return
         check = SdkUpdateCheck("azureml")
         try:
+            console.print(Text(f"Published model: {plan['deployment']['model']}"))
             console.print(
-                "Azure ML will build/reuse the serving environment, then provision the endpoint. This can take several minutes."
+                "Using the catalog's runtime and scoring configuration. Provisioning can take several minutes."
             )
-            with console.status("Deploying Azure ML managed online endpoint..."):
+            with console.status("Deploying Azure ML catalog model..."):
                 deployment = provider.deploy(model_id, name, config)
             StateManager().add_deployment(deployment)
             console.print("Deployment completed successfully!", style="bold green")
@@ -126,6 +156,9 @@ def deploy(
                 Text(
                     f"Endpoint: {deployment.deployment_name}\nStatus: {deployment.status.value}\nScoring URI: {deployment.endpoint_url}"
                 )
+            )
+            console.print(
+                Text(f"Test: hf-cloud azureml invoke {deployment.deployment_name} --input 'Hello'"), style="dim"
             )
         finally:
             check.notify(console)
@@ -217,22 +250,36 @@ def invoke(
     deployment_id: str,
     input_text: Annotated[Optional[str], typer.Option("--input", "-i")] = None,
     json_file: Annotated[Optional[Path], typer.Option("--json-file")] = None,
-    max_tokens: Annotated[int, typer.Option("--max-tokens", min=1)] = 100,
+    max_tokens: Annotated[
+        int, typer.Option("--max-tokens", min=1, help="Generation limit for published text-generation tasks")
+    ] = 100,
 ) -> None:
-    """Invoke the endpoint's configured vLLM route using Microsoft Entra ID."""
+    """Invoke the published scoring route using Microsoft Entra ID."""
     if (input_text is None) == (json_file is None):
         raise typer.BadParameter("Provide exactly one of --input or --json-file")
     with _errors():
         if json_file:
             payload = json.loads(json_file.read_text())
         else:
-            task = ctx.obj.get_deployment(deployment_id).config["task"]
-            if task == "feature-extraction":
-                payload = {"input": input_text}
-            elif task == "chat-completion":
-                payload = {"messages": [{"role": "user", "content": input_text}], "max_tokens": max_tokens}
+            deployment = ctx.obj.get_deployment(deployment_id)
+            task = deployment.config.get("task")
+            if deployment.config.get("image"):  # Existing endpoints from the removed custom runtime.
+                if task == "chat-completion":
+                    payload = {"messages": [{"role": "user", "content": input_text}], "max_tokens": max_tokens}
+                elif task == "feature-extraction":
+                    payload = {"input": input_text}
+                else:
+                    payload = {"prompt": input_text, "max_tokens": max_tokens}
             else:
-                payload = {"prompt": input_text, "max_tokens": max_tokens}
+                payload = {"inputs": input_text}
+                if task in {
+                    "text-generation",
+                    "chat-completion",
+                    "text2text-generation",
+                    "summarization",
+                    "translation",
+                }:
+                    payload["parameters"] = {"max_new_tokens": max_tokens}
         if not isinstance(payload, dict):
             raise typer.BadParameter("Inference JSON must be an object")
         typer.echo(json.dumps(ctx.obj.invoke(deployment_id, payload), indent=2))

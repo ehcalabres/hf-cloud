@@ -21,8 +21,8 @@ app = typer.Typer(
 # Register provider command groups
 app.add_typer(sagemaker_app, name="sagemaker", help="AWS SageMaker commands")
 app.add_typer(vertex_app, name="vertex", help="Google Cloud Vertex AI commands")
-app.add_typer(azureml_app, name="azureml", help="Azure ML managed online endpoints (Hub models)")
-app.add_typer(foundry_app, name="foundry", help="Advanced: Foundry catalog templates (preview)")
+app.add_typer(azureml_app, name="azureml", help="Azure ML / Foundry classic: published Hub models on managed endpoints")
+app.add_typer(foundry_app, name="foundry", help="Microsoft Foundry: published managed-compute deployments (preview)")
 app.add_typer(skills_app, name="skills", help="Manage AI assistant skills")
 
 # Register global commands

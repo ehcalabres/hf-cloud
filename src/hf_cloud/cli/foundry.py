@@ -11,7 +11,7 @@ from rich.table import Table
 from rich.text import Text
 
 from hf_cloud.cli.estimate import provider_estimate
-from hf_cloud.core.exceptions import HFCloudError
+from hf_cloud.core.exceptions import ConfigurationError, HFCloudError
 from hf_cloud.core.state import StateManager
 from hf_cloud.providers.foundry import FoundryProvider
 from hf_cloud.providers.foundry.profiles import load_profile
@@ -48,6 +48,23 @@ def _errors():
 
 
 @foundry_app.command()
+def catalog(
+    ctx: typer.Context,
+    model_id: str,
+    catalog_version: Annotated[Optional[str], typer.Option("--catalog-version")] = None,
+) -> None:
+    """Resolve a Hub ID, list published templates and show the publisher's default selection."""
+    with _errors():
+        model = ctx.obj.catalog.resolve(model_id, "foundry", catalog_version)
+        output = model.to_dict()
+        try:
+            output["default_selection"] = ctx.obj.catalog.foundry_template(model)
+        except ConfigurationError as error:
+            output["selection_required"] = str(error)
+        typer.echo(json.dumps(output, indent=2))
+
+
+@foundry_app.command()
 def deploy(
     ctx: typer.Context,
     model_id: Annotated[
@@ -56,10 +73,16 @@ def deploy(
     name: Annotated[str, typer.Option("--name", "-n", help="Foundry deployment name")],
     model_asset_id: Annotated[
         Optional[str],
-        typer.Option("--model-asset-id", help="Published registry model asset ID (required for a Hub ID)"),
+        typer.Option(
+            "--model-asset-id",
+            help="Advanced: explicit published model asset; Hub IDs are resolved automatically",
+        ),
     ] = None,
     template: Annotated[
-        Optional[str], typer.Option("--template", help="Published registry deployment-template ID")
+        Optional[str],
+        typer.Option(
+            "--template", help="Template name from foundry catalog, or a complete published asset URI"
+        ),
     ] = None,
     accelerator_type: Annotated[
         Optional[str], typer.Option("--accelerator-type", help="A100_80GB, H100_80GB, or MI300_192GB")
@@ -67,6 +90,9 @@ def deploy(
     profile: Annotated[
         Optional[Path],
         typer.Option("--profile", help="Reusable JSON profile with published model/template references"),
+    ] = None,
+    catalog_version: Annotated[
+        Optional[str], typer.Option("--catalog-version", help="Pin a published model version")
     ] = None,
     instance_count: Annotated[
         int,
@@ -82,12 +108,19 @@ def deploy(
     ] = "NoAutoUpgrade",
     dry_run: Annotated[
         bool,
-        typer.Option("--dry-run", help="Print the SDK request without Azure authentication or provisioning"),
+        typer.Option(
+            "--dry-run",
+            help="Print the SDK request without provisioning; automatic discovery reads the catalog",
+        ),
     ] = False,
 ) -> None:
     """Deploy a published model/template to Foundry GlobalManagedCompute."""
-    if profile and any(value is not None for value in (model_asset_id, template, accelerator_type)):
+    if profile and any(
+        value is not None for value in (model_asset_id, template, accelerator_type, catalog_version)
+    ):
         raise typer.BadParameter("Use --profile or explicit model/template/accelerator flags, not both")
+    if catalog_version and model_asset_id:
+        raise typer.BadParameter("Use --catalog-version with a Hub ID or pin --model-asset-id directly")
     with _errors():
         selected = load_profile(profile, model_id) if profile else {}
         config = {
@@ -95,11 +128,13 @@ def deploy(
             "deployment_template": template or selected.get("deploymentTemplateId"),
             "accelerator_type": accelerator_type or selected.get("acceleratorType"),
             "instance_count": instance_count,
+            "catalog_version": catalog_version,
             "version_upgrade_option": version_upgrade_option,
         }
         provider = ctx.obj
-        resource = provider.deployment_resource(model_id, config)
         scope = provider.client.scope(name)
+        config = provider.prepare_config(model_id, config)
+        resource = provider.deployment_resource(model_id, config)
         if dry_run:
             typer.echo(
                 json.dumps(
@@ -108,6 +143,11 @@ def deploy(
                 )
             )
             return
+        console.print(Text(f"Published model: {config['model_asset_id']}"))
+        console.print(Text(f"Published template: {config['deployment_template']}"))
+        console.print(
+            "Foundry managed compute is in preview. Microsoft supplies the serving runtime.", style="dim"
+        )
         check = SdkUpdateCheck("foundry")
         try:
             with console.status("Provisioning Foundry managed compute..."):

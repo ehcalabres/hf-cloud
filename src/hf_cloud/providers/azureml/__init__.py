@@ -1,21 +1,21 @@
 """Hub model deployment on Azure ML managed online endpoints."""
 
 import json
-import shutil
-from pathlib import Path
-from tempfile import NamedTemporaryFile, TemporaryDirectory
+from tempfile import NamedTemporaryFile
 from typing import Any, NoReturn, Optional
 
 from hf_cloud.core.deployment import Deployment, DeploymentStatus
 from hf_cloud.core.exceptions import ConfigurationError, DeploymentError, DeploymentNotFoundError, ProviderError
+from hf_cloud.providers.azure_catalog import AzureCatalog
 from hf_cloud.providers.azureml.client import AzureMLClient
-from hf_cloud.providers.azureml.serving import RUNTIME_DIR, serving_plan
+from hf_cloud.providers.azureml.serving import serving_plan, validate_config, validate_name
 from hf_cloud.providers.base import CloudProvider
 
 
 class AzureMLProvider(CloudProvider):
     def __init__(self, subscription_id=None, resource_group=None, workspace_name=None, deployment_name=None):
         self.client = AzureMLClient(subscription_id, resource_group, workspace_name, deployment_name)
+        self.catalog = AzureCatalog()
 
     def get_provider_name(self) -> str:
         return "azureml"
@@ -71,6 +71,9 @@ class AzureMLProvider(CloudProvider):
             key: task_config[key]
             for key in (
                 "task",
+                "model_asset_id",
+                "catalog_version",
+                "serving_mode",
                 "image",
                 "gpu_count",
                 "revision",
@@ -108,7 +111,7 @@ class AzureMLProvider(CloudProvider):
                 "deployment_name": component.name
                 if component
                 else (endpoint.properties or {}).get("hf-cloud-deployment"),
-                "task": metadata.get("hf-cloud-task", "text-generation"),
+                "task": task_config.get("task", metadata.get("hf-cloud-task", "unknown")),
                 "traffic": endpoint.traffic or {},
                 **(
                     {
@@ -143,41 +146,24 @@ class AzureMLProvider(CloudProvider):
         except Exception as error:
             self._raise(error)
 
-    def _environment(self, plan):
-        from azure.ai.ml.entities import BuildContext, Environment
-
-        settings = plan["environment"]
-        operations = self.client.management.environments
-        try:
-            return operations.get(name=settings["name"], version=settings["version"])
-        except Exception as error:
-            if getattr(error, "status_code", None) != 404:
-                raise
-        with TemporaryDirectory(prefix="hf-cloud-azureml-") as directory:
-            context = Path(directory)
-            (context / "Dockerfile").write_text(settings["dockerfile"])
-            shutil.copyfile(RUNTIME_DIR / "start.py", context / "start.py")
-            return operations.create_or_update(
-                Environment(
-                    name=settings["name"],
-                    version=settings["version"],
-                    build=BuildContext(path=directory, dockerfile_path="Dockerfile"),
-                    inference_config=settings["inference_config"],
-                )
-            )
+    def prepare_deployment(
+        self, model_id: str, deployment_name: str, config: dict[str, Any], token=None
+    ) -> dict:
+        validate_config(config, token)
+        validate_name(deployment_name)
+        model = self.catalog.resolve(model_id, "azureml", config.get("catalog_version"))
+        return serving_plan(model, deployment_name, config, token)
 
     def deploy(
         self, model_id: str, deployment_name: str, config: dict[str, Any], token: Optional[str] = None
     ) -> Deployment:
-        plan = serving_plan(model_id, deployment_name, config, token)
+        plan = self.prepare_deployment(model_id, deployment_name, config, token)
         self.client.require_scope()
         try:
             from azure.ai.ml.entities import (
                 IdentityConfiguration,
                 ManagedOnlineDeployment,
                 ManagedOnlineEndpoint,
-                OnlineRequestSettings,
-                ProbeSettings,
             )
 
             workspace = self.client.workspace
@@ -194,24 +180,17 @@ class AzureMLProvider(CloudProvider):
                 )
             sizes = list(client.compute.list_sizes(location=workspace.location))
             size = next((size for size in sizes if size.name == plan["deployment"]["instance_type"]), None)
-            if size is None or size.gpus != plan_gpu_count(plan):
+            if size is None:
                 raise ConfigurationError(
-                    "Selected VM GPU layout is unavailable or differs from workspace regional size metadata"
+                    "Selected VM size is unavailable in the workspace region; check the catalog recommendation and Azure ML online endpoint SKU availability"
                 )
             if config.get("hf_token_connection"):
                 client.connections.get(config["hf_token_connection"], populate_secrets=False)
-            environment = self._environment(plan)
             endpoint = ManagedOnlineEndpoint(
                 **plan["endpoint"], identity=IdentityConfiguration(type="system_assigned")
             )
             client.online_endpoints.begin_create_or_update(endpoint).result()
-            component = ManagedOnlineDeployment(
-                **plan["deployment"],
-                environment=f"azureml:{environment.name}:{environment.version}",
-                request_settings=OnlineRequestSettings(request_timeout_ms=180000),
-                liveness_probe=ProbeSettings(initial_delay=600, period=10, failure_threshold=30),
-                readiness_probe=ProbeSettings(initial_delay=600, period=10, failure_threshold=30),
-            )
+            component = ManagedOnlineDeployment(**plan["deployment"])
             client.online_deployments.begin_create_or_update(component).result()
             endpoint = client.online_endpoints.get(name=deployment_name)
             endpoint.traffic = plan["traffic"]
@@ -302,10 +281,11 @@ class AzureMLProvider(CloudProvider):
             if deployment.status != DeploymentStatus.RUNNING:
                 raise ProviderError("azureml", "Endpoint is not running")
             with NamedTemporaryFile(mode="w+", suffix=".json", prefix="hf-cloud-request-") as file:
-                model_id = deployment.model_id if deployment.model_id != "unknown" else payload.get("model")
-                if not model_id:
-                    raise ConfigurationError("Untracked endpoint: supply its served model name in --json-file")
-                json.dump({**payload, "model": model_id}, file)
+                # Catalog models own their scoring schema; preserve the request body.
+                # Existing endpoints built with the old vLLM wrapper retain their model field.
+                if deployment.config.get("image"):
+                    payload = {**payload, "model": deployment.model_id}
+                json.dump(payload, file)
                 file.flush()
                 result = self.client.management.online_endpoints.invoke(
                     endpoint_name=self.client.endpoint_name(deployment_id),
@@ -315,7 +295,3 @@ class AzureMLProvider(CloudProvider):
             return json.loads(result)
         except Exception as error:
             self._raise(error, deployment_id)
-
-
-def plan_gpu_count(plan):
-    return json.loads(plan["deployment"]["properties"]["hf-cloud-config"])["gpu_count"]

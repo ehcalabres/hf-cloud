@@ -166,7 +166,7 @@ def _print_deploy_command(
     # Only print executable hints for supported Hub weight selections.
     if (
         instance["weightsFormat"] != "safetensors"
-        or (options.revision and instance["provider"] != "azureml")
+        or options.revision
         or options.file
         or "@" in model_id
         or ":" in model_id
@@ -193,12 +193,6 @@ def _print_deploy_command(
                 shlex.join(["--accelerator-count", str(instance["numGpu"])]),
             ]
         )
-    if provider == "azureml":
-        for field in ("revision", "max_model_len", "batch_size", "kv_cache_dtype", "max_num_batched_tokens"):
-            value = getattr(options, field)
-            if value is not None:
-                parts.append(shlex.join(["--" + field.replace("_", "-"), str(value)]))
-        parts.append(shlex.join(["--safety-margin", str(safety_margin)]))
     command = " ".join(parts)
     if len(command) > console.width:
         command = " \\\n  ".join(parts)
@@ -207,6 +201,8 @@ def _print_deploy_command(
     note = (
         "The published template controls the runtime and context settings."
         if provider == "foundry"
+        else "Hardware memory fit only; Azure ML deploy checks the published catalog model. Its runtime settings may differ from this estimate."
+        if provider == "azureml"
         else "Match the deployment engine, sharding and workload to this estimate."
     )
     console.print(note, style="dim")
@@ -395,6 +391,10 @@ def estimate(
             "instances": rows[:limit],
             **diagnostics,
         }
+        if "azureml" in selected:
+            output["deploymentChecks"] = {
+                "azureml": {"catalogAvailability": "not-checked", "runtimeSettings": "publisher-defined"}
+            }
         if not rows:
             output["error"] = "No compatible instances found"
         elif not priced:
@@ -418,6 +418,11 @@ def estimate(
                 )
                 if catalog.pricing_source:
                     console.print(Text(f"  Price source: {catalog.pricing_source}", style="dim"))
+            if "azureml" in selected:
+                console.print(
+                    "Azure ML: hardware memory fit only; published model availability and runtime settings are checked by azureml catalog/deploy.",
+                    style="dim",
+                )
             if output["unpricedCount"]:
                 console.print(
                     f"{output['unpricedCount']} compatible instances have no usable price; excluded from the price range.",

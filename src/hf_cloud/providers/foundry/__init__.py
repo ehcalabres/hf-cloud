@@ -8,6 +8,7 @@ from typing import Any, NoReturn, Optional
 
 from hf_cloud.core.deployment import Deployment, DeploymentStatus
 from hf_cloud.core.exceptions import ConfigurationError, DeploymentError, DeploymentNotFoundError, ProviderError
+from hf_cloud.providers.azure_catalog import AzureCatalog
 from hf_cloud.providers.base import CloudProvider
 from hf_cloud.providers.foundry.client import FoundryClient
 from hf_cloud.providers.foundry.profiles import ACCELERATOR_MEMORY_GIB, UPGRADE_OPTIONS, validate_asset_id
@@ -16,6 +17,7 @@ from hf_cloud.providers.foundry.profiles import ACCELERATOR_MEMORY_GIB, UPGRADE_
 class FoundryProvider(CloudProvider):
     def __init__(self, subscription_id=None, resource_group=None, account_name=None, endpoint=None):
         self.client = FoundryClient(subscription_id, resource_group, account_name, endpoint)
+        self.catalog = AzureCatalog()
 
     def get_provider_name(self) -> str:
         return "foundry"
@@ -57,7 +59,7 @@ class FoundryProvider(CloudProvider):
                 if properties.provisioning_details
                 else None,
             },
-            endpoint_url=f"{self.client.endpoint}/managed-deployments/{resource.name}/",
+            endpoint_url=f"{self.client.endpoint}/openai/v1/",
             region=self.client.account.location,
             instance_type=properties.accelerator_type,
             instance_count=resource.sku.capacity,
@@ -90,6 +92,22 @@ class FoundryProvider(CloudProvider):
             return deployments
         except Exception as error:
             self._raise(error)
+
+    def prepare_config(self, model_id: str, config: dict[str, Any]) -> dict[str, Any]:
+        """Resolve a Hub ID and publisher defaults; preserve explicit advanced profiles."""
+        if all(config.get(key) for key in ("model_asset_id", "deployment_template", "accelerator_type")):
+            return config
+        if model_id.startswith("azureml://"):
+            raise ConfigurationError(
+                "For explicit model URIs, provide --template and --accelerator-type, or use a Hub ID for catalog discovery"
+            )
+        model = self.catalog.resolve(model_id, "foundry", config.get("catalog_version"))
+        if config.get("model_asset_id") and config["model_asset_id"] != model.asset_id:
+            raise ConfigurationError("Explicit model asset does not match the resolved Hub model/version")
+        selected = self.catalog.foundry_template(
+            model, config.get("deployment_template"), config.get("accelerator_type")
+        )
+        return {**config, **selected}
 
     @staticmethod
     def deployment_resource(
@@ -149,6 +167,9 @@ class FoundryProvider(CloudProvider):
         self, model_id: str, deployment_name: str, config: dict[str, Any], token: Optional[str] = None
     ) -> Deployment:
         scope = self.client.scope(deployment_name)
+        if token:
+            self.deployment_resource(model_id, config, token)
+        config = self.prepare_config(model_id, config)
         resource = self.deployment_resource(model_id, config, token)
         try:
             # Validate the account and inference endpoint before starting a billable operation.
@@ -246,15 +267,18 @@ class FoundryProvider(CloudProvider):
             access_token = self.client.credential.get_token(
                 "https://cognitiveservices.azure.com/.default"
             ).token
-            # Dedicated managed route works beyond chat models; never accept an arbitrary URL.
+            route = route.removeprefix("v1/")
+            openai_route = route in {"chat/completions", "completions", "embeddings", "responses"}
+            url = (
+                f"{self.client.endpoint}/openai/v1/{route}"
+                if openai_route
+                else f"{self.client.endpoint}/managed-deployments/{name}/{route}"
+            )
             with httpx.Client(timeout=120, follow_redirects=False) as client:
                 response = client.post(
-                    f"{self.client.endpoint}/managed-deployments/{name}/{route}",
+                    url,
                     headers={"Authorization": f"Bearer {access_token}"},
-                    json={**payload, "model": name}
-                    if route.removeprefix("v1/")
-                    in {"chat/completions", "completions", "embeddings", "responses"}
-                    else payload,
+                    json={**payload, "model": name} if openai_route else payload,
                 )
                 if not response.is_success:
                     raise ProviderError(

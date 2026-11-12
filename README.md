@@ -79,48 +79,54 @@ constraints are left to your package manager; an available release is not a guar
 of compatibility. Set `HF_CLOUD_NO_UPDATE_CHECK=1` to disable automatic checks.
 Explicit `providers versions` commands still check PyPI.
 
-## Microsoft Azure ML
+## Microsoft deployments: published catalog models
 
-Azure ML is the main Microsoft backend, alongside SageMaker and Vertex AI. Deploy
-a Hub ID directly to a managed online endpoint, with your choice of GPU VM and
-replica count. No Foundry catalog model IDs or deployment templates are needed.
+HF Cloud deploys published models using Microsoft/Hugging Face serving assets.
+It does not maintain custom Microsoft serving images or import arbitrary Hub
+repositories. Both paths accept a Hugging Face model ID:
+
+| Command | Azure resource | Use when |
+|---|---|---|
+| `azureml` | Azure ML workspace or Foundry classic hub-based project | You want a managed online endpoint with a VM size and replica count |
+| `foundry` | Current Foundry account (`AIServices`) | You want Foundry managed compute with a published template and accelerator family (preview) |
+
+### Azure ML / Foundry classic
 
 ```bash
 uv sync
 az login
 uv run hf-cloud providers configure azureml
-uv run hf-cloud azureml estimate Qwen/Qwen3-0.6B --max-model-len 2048
-uv run hf-cloud azureml deploy Qwen/Qwen3-0.6B --name qwen-test \
-  --instance-type Standard_NC24ads_A100_v4 --max-model-len 2048 --dry-run
+uv run hf-cloud azureml catalog Qwen/Qwen2.5-32B-Instruct
+uv run hf-cloud azureml deploy Qwen/Qwen2.5-32B-Instruct --name qwen-test \
+  --instance-type Standard_NC40ads_H100_v5 --dry-run --export-dir ./azure-deployment
 ```
 
-Remove `--dry-run` to build the vLLM environment in your existing Azure ML workspace
-and provision the endpoint. Commands include `deploy`, `ls`, `describe`, `status`,
-`invoke`, `update`, `logs`, `delete`, and `estimate`. The root `estimate` command
-includes Azure ML's bundled GPU prices in comparisons. Read the [Azure ML guide](docs/azureml.md)
-for authentication, private/gated models, serving tasks, permissions and cleanup.
+Catalog lookup verifies and pins the published model version. Remove `--dry-run`
+to provision, or use the exported definitions with Azure CLI and your production
+pipeline. The catalog supplies the runtime and scoring configuration. See the
+[Azure ML guide](docs/azureml.md) for workspace setup, gated models, export,
+invocation and cleanup.
 
-## Microsoft Foundry (advanced preview)
-
-Microsoft Foundry managed compute is supported through the optional `foundry`
-extra. It deploys published Hugging Face catalog models and deployment templates
-on dedicated GPU capacity, using the Foundry account's unified inference endpoint.
+### Current Microsoft Foundry
 
 ```bash
 uv sync --extra foundry
 az login
 uv run hf-cloud providers configure foundry
-uv run hf-cloud foundry deploy Qwen/Qwen3-32B --name qwen3-32b \
-  --profile examples/foundry/qwen3-32b-h100.json --dry-run
+uv run hf-cloud foundry catalog Qwen/Qwen3-32B
+uv run hf-cloud foundry deploy Qwen/Qwen3-32B --name qwen3-32b --dry-run
 ```
 
-Remove `--dry-run` after selecting the compatible assets for your project. Foundry
-commands include `deploy`, `ls`, `describe`, `status`, `invoke`, `update`, `logs`,
-`delete`, and profile-based `estimate`. See the [Foundry guide](docs/foundry.md) for
-raw model/template inputs, authentication, monitoring, pricing comparisons, and
-how it differs from the primary Azure ML backend. This uses Foundry's current
-managed-compute preview; arbitrary/private Hub repositories aren't published by
-HF Cloud.
+HF Cloud resolves the published model, template and accelerator defaults. If the
+publisher provides multiple choices without a default, select a template shown by
+`foundry catalog` using `--template NAME`. Review the plan, then remove `--dry-run`
+to provision. Explicit asset references and reusable profiles remain available.
+See the [Foundry guide](docs/foundry.md) for templates, authentication, quotas,
+pricing comparisons and cleanup. This deployment type is in preview.
+
+Azure ML and current Foundry use different registries and quotas. A model may be
+published in one catalog and unavailable in the other; HF Cloud reports that
+before creating resources and never switches providers automatically.
 
 ## Agent Skills
 
@@ -240,10 +246,11 @@ The comparison shares one model-metadata session across all providers.
 Human-readable output ends with a deployment command for the cheapest compatible
 instance, including Vertex AI's accelerator type and count. The hint considers all
 matches regardless of `--sort` or `--limit`; change `my-endpoint` to your endpoint
-name. Azure ML hints also carry supported workload settings and the selected Hub
-revision. Hints are omitted for local models, selected files, unsupported weight
-formats, and revisions on providers that cannot preserve them. Configure the
-serving workload to match the estimate when deploying with other providers.
+name. Hints are omitted for local models, selected files/revisions and unsupported
+weight formats. Azure ML hints select hardware only: the published model controls
+the runtime and context settings. Azure ML memory estimates do not establish
+catalog availability; verify it using `azureml catalog MODEL_ID`. Configure the
+serving workload to match the estimate on providers that support runtime options.
 
 These are **bundled catalog estimates in USD per instance-hour**, not live
 quotes. Catalog dates and pricing regions (or their absence) are displayed and
@@ -358,6 +365,8 @@ dependencies from HF-Cloud's provider SDKs.
 | `<cli> providers ls` | List available providers |
 | `<cli> providers configure <provider>` | Configure provider credentials |
 | `<cli> providers versions` | Inspect installed provider SDKs and stable PyPI releases |
+| `<cli> azureml catalog <model>` | Check and pin a published Azure ML model |
+| `<cli> foundry catalog <model>` | Resolve a published Foundry model and its templates |
 | `<cli> azureml update <id> --instance-count N` | Scale Azure ML endpoint replicas |
 | `<cli> foundry update <id> --instance-count N` | Scale Foundry model instances |
 | `<cli> skills preview` | Preview generated SKILL.md for AI assistants |
@@ -367,8 +376,8 @@ dependencies from HF-Cloud's provider SDKs.
 
 - **AWS SageMaker** - Fully implemented
 - **Google Cloud Vertex AI** - Fully implemented
-- **Microsoft Azure ML** - Hub models on managed online endpoints (primary Microsoft backend)
-- **Microsoft Foundry** - Published Hugging Face templates on managed compute (preview)
+- **Microsoft Azure ML** - Published catalog models on managed online endpoints (also Foundry classic)
+- **Microsoft Foundry** - Published Hub models and template discovery on managed compute (preview)
 
 ## Provider-Specific Examples
 
