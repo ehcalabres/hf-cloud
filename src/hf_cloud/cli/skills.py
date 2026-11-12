@@ -50,25 +50,32 @@ Standalone fallback:
 1. Configure provider defaults:
    - `hf cloud providers configure sagemaker`
    - `hf cloud providers configure vertex`
+   - `hf cloud providers configure azureml`
    - `hf cloud providers configure foundry` (install `hf-cloud[foundry]` first)
 2. Compare instance price estimates before deployment:
    - `hf cloud estimate MODEL_ID`
    - `hf cloud estimate MODEL_ID --provider sagemaker`
    - `hf cloud estimate MODEL_ID --provider vertex`
+   - `hf cloud estimate MODEL_ID --provider azureml`
    - `hf cloud foundry estimate MODEL_ID --profile PROFILE.json`
 3. Deploy a model:
    - `hf cloud sagemaker deploy MODEL_ID --name NAME`
    - `hf cloud vertex deploy MODEL_ID --name NAME`
+   - `hf cloud azureml deploy MODEL_ID --name NAME --max-model-len 2048 --dry-run`
+   - Remove `--dry-run` after reviewing the plan to provision an Azure ML endpoint.
    - `hf cloud foundry deploy MODEL_ID --name NAME --profile PROFILE.json --dry-run`
    - Remove `--dry-run` to deploy a compatible published Foundry model/template.
 4. Verify and test:
    - `hf cloud sagemaker status DEPLOYMENT_ID`
    - `hf cloud vertex status DEPLOYMENT_ID`
+   - `hf cloud azureml status DEPLOYMENT_ID`
+   - `hf cloud azureml invoke DEPLOYMENT_ID --input "Hello"`
    - `hf cloud foundry status DEPLOYMENT_ID`
    - `hf cloud sagemaker invoke DEPLOYMENT_ID --input "Hello"`
 5. Clean up:
    - `hf cloud sagemaker delete DEPLOYMENT_ID`
    - `hf cloud vertex delete DEPLOYMENT_ID`
+   - `hf cloud azureml delete DEPLOYMENT_ID`
    - `hf cloud foundry delete DEPLOYMENT_ID`
 
 ## Useful commands
@@ -76,10 +83,20 @@ Standalone fallback:
 - `hf cloud providers ls`
 - `hf cloud sagemaker ls`
 - `hf cloud vertex ls`
+- `hf cloud azureml ls`
 - `hf cloud foundry ls`
 
-Foundry scope options (`--subscription-id`, `--resource-group`, `--account`) go
-before the subcommand. Profiles refer to published registry model/template assets;
+Azure ML is the main Microsoft backend. It loads Hub IDs directly using vLLM on
+managed online endpoints. Configure a subscription, resource group and existing
+workspace, or pass `--subscription-id`, `--resource-group`, `--workspace` before
+the subcommand. Use `--hf-token-connection NAME` for a workspace connection with
+an HF_TOKEN secret; never put raw tokens in deployment settings. `--task` selects
+text-generation (default), chat-completion, or feature-extraction. Scaling uses
+`azureml update ID --instance-count N`. Deleting removes the endpoint and all its
+components. Check GPU quotas and clean up failed endpoints too.
+
+Foundry is a separate advanced catalog/template preview. Foundry scope options
+(`--subscription-id`, `--resource-group`, `--account`) go before the subcommand. Profiles refer to published registry model/template assets;
 HF Cloud does not publish arbitrary Hub models to Foundry or use Hub tokens there.
 
 Tip: if you use standalone installation, replace `hf cloud` with `hf-cloud`.

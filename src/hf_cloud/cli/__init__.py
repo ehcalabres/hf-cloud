@@ -2,6 +2,7 @@
 
 import typer
 
+from hf_cloud.cli.azureml import azureml_app
 from hf_cloud.cli.estimate import estimate as estimate_command
 from hf_cloud.cli.foundry import foundry_app
 from hf_cloud.cli.global_commands import list_all_deployments, providers_app
@@ -20,7 +21,8 @@ app = typer.Typer(
 # Register provider command groups
 app.add_typer(sagemaker_app, name="sagemaker", help="AWS SageMaker commands")
 app.add_typer(vertex_app, name="vertex", help="Google Cloud Vertex AI commands")
-app.add_typer(foundry_app, name="foundry", help="Microsoft Foundry managed compute commands")
+app.add_typer(azureml_app, name="azureml", help="Azure ML managed online endpoints (Hub models)")
+app.add_typer(foundry_app, name="foundry", help="Advanced: Foundry catalog templates (preview)")
 app.add_typer(skills_app, name="skills", help="Manage AI assistant skills")
 
 # Register global commands

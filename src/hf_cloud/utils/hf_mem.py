@@ -349,6 +349,7 @@ def load_instance_data(provider: str) -> InstanceData:
                 safety_margin_default=data.get("safetyMarginDefault", 0.1),
                 last_updated=data.get("last_updated"),
                 pricing_region=data.get("pricingRegion"),
+                pricing_source=data.get("pricingSource"),
             )
     except json.JSONDecodeError as e:
         raise HfMemError(

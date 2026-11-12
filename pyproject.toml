@@ -19,6 +19,8 @@ dependencies = [
     "sagemaker>=3.29.0",
     "google-cloud-aiplatform>=1.135.0",
     "google-cloud-logging>=3.0.0",
+    "azure-ai-ml>=1.35.2,<2",
+    "azure-identity>=1.27.0,<2",
 ]
 
 [build-system]

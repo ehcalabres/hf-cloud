@@ -17,7 +17,7 @@ console = Console()
 def list_all_deployments(
     provider: Annotated[
         Optional[str],
-        typer.Option("--provider", "-p", help="Filter by provider (sagemaker, vertex, foundry)"),
+        typer.Option("--provider", "-p", help="Filter by provider (sagemaker, vertex, azureml, foundry)"),
     ] = None,
     status: Annotated[
         Optional[str],
@@ -35,6 +35,31 @@ def list_all_deployments(
         console.print("[dim]Refreshing deployment status from cloud providers...[/dim]")
         provider_names = [provider] if provider else ProviderRegistry.list_providers()
         for provider_name in provider_names:
+            if provider_name == "azureml":
+                from hf_cloud.providers.azureml import AzureMLProvider
+                from hf_cloud.providers.azureml.client import AzureMLClient
+
+                scope_keys = ("subscription_id", "resource_group", "workspace_name")
+                scopes = {
+                    tuple(d.get("config", {}).get(key) for key in scope_keys)
+                    for d in state.list_deployments(provider="azureml")
+                }
+                scopes = {scope for scope in scopes if all(scope)}
+                default = AzureMLClient()
+                if all(getattr(default, key) for key in scope_keys):
+                    scopes.add(tuple(getattr(default, key) for key in scope_keys))
+                if not scopes:
+                    console.print(
+                        "  [yellow]⚠[/yellow] azureml: configure a workspace with hf-cloud providers configure azureml"
+                    )
+                for scope in sorted(scopes):
+                    try:
+                        scoped_provider = AzureMLProvider(**dict(zip(scope_keys, scope)))
+                        state.add_deployments(scoped_provider.list_deployments())
+                        console.print(Text(f"  ✓ azureml ({scope[2]})", style="green"))
+                    except Exception as error:
+                        console.print(Text(f"  ⚠ azureml ({scope[2]}): {error}", style="yellow"))
+                continue
             if provider_name == "foundry":
                 from hf_cloud.providers.foundry import FoundryProvider
                 from hf_cloud.providers.foundry.client import FoundryClient
@@ -167,6 +192,11 @@ def list_providers() -> None:
         # Check if provider has dependencies installed
         try:
             ProviderRegistry.get_provider(provider)
+            if provider == "azureml":
+                from importlib.metadata import version
+
+                ProviderRegistry.get_provider(provider).client.require_scope()
+                version("azure-ai-ml")
             if provider == "foundry":
                 from importlib.metadata import version
 
@@ -184,7 +214,7 @@ def list_providers() -> None:
 
 @providers_app.command(name="configure")
 def configure_provider(
-    provider: Annotated[str, typer.Argument(help="Provider name (sagemaker, vertex, foundry)")],
+    provider: Annotated[str, typer.Argument(help="Provider name (sagemaker, vertex, azureml, foundry)")],
 ) -> None:
     """Configure credentials and defaults for a provider."""
     if provider not in ProviderRegistry.list_providers():
@@ -221,6 +251,24 @@ def configure_provider(
         if default_instance_type:
             new_config["default_instance_type"] = default_instance_type
 
+        config.set_provider_config(provider, new_config)
+
+    elif provider == "azureml":
+        new_config = {
+            "subscription_id": typer.prompt(
+                "Azure Subscription ID", default=current_config.get("subscription_id", "")
+            ),
+            "resource_group": typer.prompt(
+                "Azure Resource Group", default=current_config.get("resource_group", "")
+            ),
+            "workspace_name": typer.prompt(
+                "Azure ML workspace", default=current_config.get("workspace_name", "")
+            ),
+            "default_instance_type": typer.prompt(
+                "Default GPU VM size",
+                default=current_config.get("default_instance_type", "Standard_NC24ads_A100_v4"),
+            ),
+        }
         config.set_provider_config(provider, new_config)
 
     elif provider == "foundry":

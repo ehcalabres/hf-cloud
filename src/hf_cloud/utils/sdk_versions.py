@@ -21,6 +21,7 @@ from hf_cloud.core.storage import write_json_atomic
 PROVIDER_SDKS = {
     "sagemaker": ("sagemaker", "boto3"),
     "vertex": ("google-cloud-aiplatform", "google-cloud-logging"),
+    "azureml": ("azure-ai-ml", "azure-identity"),
     "foundry": ("azure-mgmt-cognitiveservices", "azure-identity", "azure-mgmt-monitor"),
 }
 CACHE_DIR = Path.home() / ".hf-cloud" / "cache" / "sdk-versions"

@@ -13,8 +13,8 @@ Preferred method: install and run it as an HF CLI extension (`hf cloud ...`). Mo
 
 In the examples below, replace `<cli>` with either `hf-cloud` or `hf cloud`.
 
-Both installation modes include the AWS SageMaker and Google Cloud Vertex AI
-dependencies by default. Microsoft Foundry uses the optional `foundry` extra.
+Both installation modes include AWS SageMaker, Google Cloud Vertex AI and
+Azure ML support by default. Microsoft Foundry uses the optional `foundry` extra.
 
 ## Hugging Face CLI extension
 
@@ -41,7 +41,7 @@ hf cloud sagemaker ls
 git clone https://github.com/ehcalabres/hf-cloud.git
 cd hf-cloud
 
-# Install the CLI with SageMaker and Vertex AI support
+# Install the CLI with SageMaker, Vertex AI and Azure ML support
 pip install -e .
 
 # Install with development dependencies
@@ -57,11 +57,11 @@ SDK explicitly, use `uv lock --upgrade-package sagemaker` followed by `uv sync`.
 SageMaker uses its SDK's `ModelBuilder` to build the serving image. Vertex AI uses
 the serving image configured in HF Cloud. SDK updates do not update running endpoints.
 
-During `sagemaker deploy` and `vertex deploy`, HF Cloud checks for newer stable,
-non-yanked SDK releases on PyPI in the background and prints an informational notice
+During `sagemaker deploy`, `vertex deploy` and `azureml deploy`, HF Cloud checks
+for newer stable, non-yanked SDK releases on PyPI in the background and prints an informational notice
 when the command finishes. SageMaker checks `sagemaker` and `boto3`; Vertex checks
-`google-cloud-aiplatform` and `google-cloud-logging`. Results, including failed
-checks, are cached for 24 hours in `~/.hf-cloud/cache/sdk-versions/`. Checks never
+`google-cloud-aiplatform` and `google-cloud-logging`; Azure ML checks `azure-ai-ml`
+and `azure-identity`. Results, including failed checks, are cached for 24 hours in `~/.hf-cloud/cache/sdk-versions/`. Checks never
 delay deployment for a network response or install updates. If the command finishes
 before the check, a later invocation can use the cached result. Offline failures
 are silent during deployment; estimates do not run SDK checks.
@@ -79,7 +79,28 @@ constraints are left to your package manager; an available release is not a guar
 of compatibility. Set `HF_CLOUD_NO_UPDATE_CHECK=1` to disable automatic checks.
 Explicit `providers versions` commands still check PyPI.
 
-## Microsoft Foundry
+## Microsoft Azure ML
+
+Azure ML is the main Microsoft backend, alongside SageMaker and Vertex AI. Deploy
+a Hub ID directly to a managed online endpoint, with your choice of GPU VM and
+replica count. No Foundry catalog model IDs or deployment templates are needed.
+
+```bash
+uv sync
+az login
+uv run hf-cloud providers configure azureml
+uv run hf-cloud azureml estimate Qwen/Qwen3-0.6B --max-model-len 2048
+uv run hf-cloud azureml deploy Qwen/Qwen3-0.6B --name qwen-test \
+  --instance-type Standard_NC24ads_A100_v4 --max-model-len 2048 --dry-run
+```
+
+Remove `--dry-run` to build the vLLM environment in your existing Azure ML workspace
+and provision the endpoint. Commands include `deploy`, `ls`, `describe`, `status`,
+`invoke`, `update`, `logs`, `delete`, and `estimate`. The root `estimate` command
+includes Azure ML's bundled GPU prices in comparisons. Read the [Azure ML guide](docs/azureml.md)
+for authentication, private/gated models, serving tasks, permissions and cleanup.
+
+## Microsoft Foundry (advanced preview)
 
 Microsoft Foundry managed compute is supported through the optional `foundry`
 extra. It deploys published Hugging Face catalog models and deployment templates
@@ -97,7 +118,7 @@ Remove `--dry-run` after selecting the compatible assets for your project. Found
 commands include `deploy`, `ls`, `describe`, `status`, `invoke`, `update`, `logs`,
 `delete`, and profile-based `estimate`. See the [Foundry guide](docs/foundry.md) for
 raw model/template inputs, authentication, monitoring, pricing comparisons, and
-the differences from older Azure ML deployments. This uses Foundry's current
+how it differs from the primary Azure ML backend. This uses Foundry's current
 managed-compute preview; arbitrary/private Hub repositories aren't published by
 HF Cloud.
 
@@ -210,7 +231,7 @@ verify status is also an error; resources are retained for inspection.
 ```
 
 The primary `<cli> estimate` command compares all providers with bundled instance
-catalogs (currently SageMaker and Vertex AI). It highlights the cheapest
+catalogs (SageMaker, Vertex AI and Azure ML). It highlights the cheapest
 compatible instance and lists matches cheapest-first by default.
 `--sort most-expensive` reverses the price order, and `--limit` limits displayed
 rows while the cheapest summary still considers every compatible match. Unknown or
@@ -219,16 +240,18 @@ The comparison shares one model-metadata session across all providers.
 Human-readable output ends with a deployment command for the cheapest compatible
 instance, including Vertex AI's accelerator type and count. The hint considers all
 matches regardless of `--sort` or `--limit`; change `my-endpoint` to your endpoint
-name. It is omitted for local models, selected files/revisions, and weight formats
-the deployment commands do not support. Configure the serving workload to match
-the estimate; the hint selects hardware, without applying workload options.
+name. Azure ML hints also carry supported workload settings and the selected Hub
+revision. Hints are omitted for local models, selected files, unsupported weight
+formats, and revisions on providers that cannot preserve them. Configure the
+serving workload to match the estimate when deploying with other providers.
 
 These are **bundled catalog estimates in USD per instance-hour**, not live
 quotes. Catalog dates and pricing regions (or their absence) are displayed and
 included in JSON. Rates can differ by region, serving service, and discounts;
 storage, network, and other charges are outside this comparison. Verify a
-deployment's price with [AWS pricing](https://aws.amazon.com/sagemaker/ai/pricing/)
-or [Google Cloud pricing](https://cloud.google.com/vertex-ai/pricing).
+deployment's price with [AWS pricing](https://aws.amazon.com/sagemaker/ai/pricing/),
+[Google Cloud pricing](https://cloud.google.com/vertex-ai/pricing), or
+[Azure pricing](https://azure.microsoft.com/en-us/pricing/details/machine-learning/).
 Cloud capacity and quotas are not checked. Include a published Foundry template
 with `--foundry-profile PROFILE.json` to compare it alongside the bundled catalogs.
 See [Foundry estimates](docs/foundry.md#compare-template-estimates) for template
@@ -335,6 +358,7 @@ dependencies from HF-Cloud's provider SDKs.
 | `<cli> providers ls` | List available providers |
 | `<cli> providers configure <provider>` | Configure provider credentials |
 | `<cli> providers versions` | Inspect installed provider SDKs and stable PyPI releases |
+| `<cli> azureml update <id> --instance-count N` | Scale Azure ML endpoint replicas |
 | `<cli> foundry update <id> --instance-count N` | Scale Foundry model instances |
 | `<cli> skills preview` | Preview generated SKILL.md for AI assistants |
 | `<cli> skills add` | Install SKILL.md and optionally symlink to assistant folders |
@@ -343,6 +367,7 @@ dependencies from HF-Cloud's provider SDKs.
 
 - **AWS SageMaker** - Fully implemented
 - **Google Cloud Vertex AI** - Fully implemented
+- **Microsoft Azure ML** - Hub models on managed online endpoints (primary Microsoft backend)
 - **Microsoft Foundry** - Published Hugging Face templates on managed compute (preview)
 
 ## Provider-Specific Examples

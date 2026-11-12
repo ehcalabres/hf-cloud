@@ -11,6 +11,10 @@ model, a compatible deployment template, an accelerator family, and model instan
 count. The template determines GPUs per instance, runtime, and context settings.
 See [Microsoft's architecture and template overview](https://learn.microsoft.com/en-us/azure/foundry/concepts/managed-compute-overview).
 
+For direct deployment of a Hub ID with a GPU VM and replica count, use the
+primary [Azure ML backend](azureml.md). Foundry is retained as a separate advanced
+preview for published catalog models and managed-compute templates.
+
 ## Setup
 
 ```bash
@@ -22,7 +26,8 @@ uv run hf-cloud providers configure foundry
 For pip installations use `pip install 'hf-cloud[foundry]'`. The optional extra pins
 `azure-mgmt-cognitiveservices==15.0.0b2`, the preview SDK documented by Microsoft;
 its managed-compute operations use API `2026-03-15-preview`. Azure Identity and
-Azure Monitor clients are included. Other providers don't require these packages.
+Azure Monitor clients are included. The Cognitive Services and Monitor packages
+are specific to Foundry; Azure Identity is also used by the primary Azure ML backend.
 
 Use an existing Foundry account of kind `AIServices`, rather than an Azure ML
 workspace or an OpenAI-only account. Configure its subscription, resource group,

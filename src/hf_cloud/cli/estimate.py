@@ -160,11 +160,13 @@ def _print_comparison(rows: list[dict[str, Any]], total: int, order: PriceSort) 
     )
 
 
-def _print_deploy_command(model_id: str, instance: dict[str, Any], options: EstimateOptions) -> None:
-    # Deploy commands only accept Hub models, without revisions or file selection.
+def _print_deploy_command(
+    model_id: str, instance: dict[str, Any], options: EstimateOptions, safety_margin: float = 0.1
+) -> None:
+    # Only print executable hints for supported Hub weight selections.
     if (
         instance["weightsFormat"] != "safetensors"
-        or options.revision
+        or (options.revision and instance["provider"] != "azureml")
         or options.file
         or "@" in model_id
         or ":" in model_id
@@ -173,7 +175,7 @@ def _print_deploy_command(model_id: str, instance: dict[str, Any], options: Esti
     ):
         return
     provider = instance["provider"]
-    if provider not in {"sagemaker", "vertex", "foundry"}:
+    if provider not in {"sagemaker", "vertex", "azureml", "foundry"}:
         return
     parts = [
         shlex.join(["hf-cloud", provider, "deploy", model_id]),
@@ -191,6 +193,12 @@ def _print_deploy_command(model_id: str, instance: dict[str, Any], options: Esti
                 shlex.join(["--accelerator-count", str(instance["numGpu"])]),
             ]
         )
+    if provider == "azureml":
+        for field in ("revision", "max_model_len", "batch_size", "kv_cache_dtype", "max_num_batched_tokens"):
+            value = getattr(options, field)
+            if value is not None:
+                parts.append(shlex.join(["--" + field.replace("_", "-"), str(value)]))
+        parts.append(shlex.join(["--safety-margin", str(safety_margin)]))
     command = " ".join(parts)
     if len(command) > console.width:
         command = " \\\n  ".join(parts)
@@ -417,7 +425,7 @@ def estimate(
                 )
             _print_diagnostics(console, diagnostics)
             if cheapest is not None:
-                _print_deploy_command(model_id, cheapest, options)
+                _print_deploy_command(model_id, cheapest, options, safety_margin)
         if "error" in output:
             raise typer.Exit(code=1)
     except (HfMemError, ConfigurationError) as error:
