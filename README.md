@@ -264,8 +264,16 @@ one-instance hourly estimate. `--hours` only changes the estimate; it does not
 schedule endpoint shutdown. Storage, networking, autoscaling and other service
 charges are outside this projection. Deploy hints use the projected replica count.
 
-The cost comparison appears first, followed by a compact Microsoft availability
-table. Use `--verbose` on `estimate` or `catalog` for full check explanations;
+The cost comparison appears first, followed by a compact **Provider availability**
+table for every selected provider. Deployment evidence and cost availability are
+separate: SageMaker and Vertex show **Runtime unverified** because they deploy from
+the Hub without requiring a catalog entry, while Azure ML and Foundry show their
+publication check results. Memory fit alone does not establish runtime support,
+Hub permissions, regional capacity or quota. Selections the current deploy commands
+cannot reproduce (such as specific Hub revisions, files or local weights) are
+marked **Selection unsupported**, even when their memory/cost estimates are useful.
+The table respects `--provider` and summarizes every match regardless of `--limit`.
+Use `--verbose` on `estimate` or `catalog` for full check explanations;
 on estimates it also shows individual price sources. JSON always retains the
 complete check results and pricing metadata, plus `costEstimate`,
 `deploymentPricePerHourUsd` and `estimatedCostUsd`.
@@ -307,7 +315,10 @@ metadata and pricing inputs.
 
 Global JSON output includes `cheapest`, `mostExpensive`, `totalCompatible`,
 `pricedCount`, `unpricedCount`, ranked `instances` with their `provider`, and
-`pricing` metadata. Microsoft results also include `catalogAvailability` and
+`pricing` metadata. Estimates also include `providerAvailability` with each
+provider's deployment status/path, cost-estimate status and explanation. This
+summary reuses existing checks without additional Hub or cloud requests.
+Microsoft results also include `catalogAvailability` and
 `excludedProviders` when applicable. Unknown checks are excluded from recommendations,
 while other providers can still produce a successful estimate. `--provider` can be repeated to select providers. A shared
 `--safety-margin` defaults to 0.1 so the comparison uses the same reserve policy

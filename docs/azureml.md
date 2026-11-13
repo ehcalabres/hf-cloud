@@ -173,7 +173,7 @@ hf-cloud estimate Qwen/Qwen2.5-32B-Instruct --provider azureml --hours 24 --inst
 
 The projection multiplies the bundled VM-hour rate by replicas and running hours.
 It assumes constant replicas and excludes storage, networking and other charges.
-The price table appears first; compact catalog status follows. Use `--verbose`
+The price table appears first; a compact provider availability table follows. Use `--verbose`
 for full catalog explanations and rate provenance, or `--json` for the complete
 results. `--hours` changes cost calculations only; it does not stop an endpoint.
 

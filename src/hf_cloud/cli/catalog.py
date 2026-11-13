@@ -31,7 +31,6 @@ def print_catalog_availability(
     results: dict[str, CatalogAvailability],
     output: Console = console,
     *,
-    estimate_labels: Optional[dict[str, str]] = None,
     verbose: bool = False,
 ) -> None:
     if not results:
@@ -39,20 +38,16 @@ def print_catalog_availability(
     table = Table(
         title="Microsoft catalogs",
         box=box.SIMPLE_HEAD,
-        header_style="bold" if estimate_labels is None else "dim",
-        title_style="bold" if estimate_labels is None else "dim",
+        header_style="bold",
+        title_style="bold",
         padding=(0, 1),
     )
     table.add_column("Provider", no_wrap=True)
     table.add_column("Availability", no_wrap=True)
-    table.add_column("Cost estimate" if estimate_labels is not None else "Version")
+    table.add_column("Version")
     for provider, result in results.items():
         label, style = STATUS_LABELS[result.status]
-        detail = (
-            estimate_labels.get(provider, "Excluded")
-            if estimate_labels is not None
-            else (result.model.version if result.model else "—")
-        )
+        detail = result.model.version if result.model else "—"
         table.add_row(provider, Text(label, style=style), Text(detail))
     output.print(table)
     if verbose:

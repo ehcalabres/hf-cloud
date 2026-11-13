@@ -18,7 +18,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from hf_cloud.cli.catalog import print_catalog_availability
+from hf_cloud.cli.provider_availability import print_provider_availability
 from hf_cloud.core.catalog_availability import (
     MICROSOFT_PROVIDERS,
     CatalogAvailability,
@@ -26,6 +26,7 @@ from hf_cloud.core.catalog_availability import (
 )
 from hf_cloud.core.estimation import InstanceMatch, compare_instances, compute_cost, hourly_price
 from hf_cloud.core.exceptions import ConfigurationError
+from hf_cloud.core.provider_availability import provider_availability
 from hf_cloud.providers.azure_catalog import validate_hub_id
 from hf_cloud.providers.foundry.profiles import load_profile, profile_catalog
 from hf_cloud.utils.hf_mem import (
@@ -283,7 +284,7 @@ def estimate(
     verbose: Annotated[
         bool,
         typer.Option(
-            "--verbose", "-v", help="Show full catalog exclusions and price sources", rich_help_panel="Output"
+            "--verbose", "-v", help="Show deployment-check details and price sources", rich_help_panel="Output"
         ),
     ] = False,
     hours: Annotated[
@@ -448,6 +449,10 @@ def estimate(
         cheapest = min(priced, key=lambda row: row["pricePerHourUsd"]) if priced else None
         most_expensive = max(priced, key=lambda row: row["pricePerHourUsd"]) if priced else None
         reference = selection.reference
+        availability = provider_availability(
+            model_id, selected, options, checks, rows, excluded,
+            reference.raw.get("format") if reference else None,
+        )
         diagnostics = {
             "hfMemVersion": HF_MEM_VERSION,
             "memoryUnit": "GiB",
@@ -491,6 +496,7 @@ def estimate(
             "cheapest": cheapest,
             "mostExpensive": most_expensive,
             "instances": rows[:limit],
+            "providerAvailability": availability,
             **diagnostics,
         }
         if checks:
@@ -517,20 +523,9 @@ def estimate(
                     f"Compute projection: {hours:g} running hours × {instance_count} instance(s), held constant.",
                     style="dim",
                 )
-            estimate_labels = {}
-            for provider, result in checks.items():
-                matches = [row for row in rows if row["provider"] == provider]
-                if provider in excluded:
-                    estimate_labels[provider] = "Excluded"
-                elif not matches:
-                    estimate_labels[provider] = "No memory fit"
-                elif any(row["pricePerHourUsd"] is not None for row in matches):
-                    estimate_labels[provider] = "Included"
-                else:
-                    estimate_labels[provider] = "Price unavailable"
+            console.print()
+            print_provider_availability(availability, checks, console, verbose=verbose)
             if checks:
-                console.print()
-                print_catalog_availability(checks, console, estimate_labels=estimate_labels, verbose=verbose)
                 if checks.get("foundry") and checks["foundry"].status == "available" and "foundry" in excluded:
                     console.print(
                         "Foundry: no verified template layouts; use --verbose or supply --foundry-profile FILE.",
@@ -544,9 +539,6 @@ def estimate(
                         style="dim",
                     )
             if verbose:
-                for provider, reason in excluded.items():
-                    if checks[provider].reason != reason:
-                        console.print(Text(f"{provider} excluded: {reason}", style="dim"))
                 for catalog in catalogs:
                     console.print(
                         Text(

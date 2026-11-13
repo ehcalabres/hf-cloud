@@ -129,7 +129,13 @@ Rates already include every GPU in an instance; do not multiply GPU count twice.
 Foundry profiles accept either a sourced `pricePerAcceleratorHourUsd` (converted
 using the template GPU count) or `pricePerInstanceHourUsd`, not both. These are
 compute estimates, excluding storage/network/other charges, and `--hours` does not
-schedule cleanup. Cost tables appear before compact Microsoft status. Add
+schedule cleanup. Cost tables appear before a compact Provider availability table
+for every selected provider. SageMaker/Vertex show Runtime unverified: their Hub
+deployment path does not require a catalog entry, but model/runtime compatibility
+has not been established. Microsoft statuses reflect catalog publication, not
+guaranteed runtime startup, capacity or quota. Unsupported deployment selections
+remain useful for memory estimates but are labeled Selection unsupported.
+JSON adds providerAvailability while preserving Microsoft catalogAvailability. Add
 `--verbose` for full check explanations and pricing provenance; JSON retains all
 details and projected costs.
 

@@ -78,7 +78,7 @@ def test_catalog_table_is_after_prices_and_full_reasons_require_verbose(comparis
     )
     basic = runner.invoke(app, ["estimate", "org/model"])
     assert basic.exit_code == 0, basic.stdout
-    assert basic.stdout.index("vertex-fit") < basic.stdout.index("Microsoft catalogs")
+    assert basic.stdout.index("vertex-fit") < basic.stdout.index("Provider availability")
     assert marker not in basic.stdout
     assert "Could not verify" in basic.stdout
     detail = runner.invoke(app, ["estimate", "org/model", "--verbose"])

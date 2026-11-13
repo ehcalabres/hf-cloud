@@ -206,7 +206,9 @@ last and cannot win cheapest. The launch price in the example profile is histori
 verify your current rate before using it as a quote. Automatic estimates join
 published templates with the bundled Foundry rate table, never with VM prices.
 
-Cost output leads with the comparison, followed by compact catalog status. Add
+Cost output leads with the comparison, followed by a compact provider availability
+table. SageMaker/Vertex runtime support is unverified; Microsoft publication is
+checked separately from memory fit and prices. Add
 `--verbose` to see full publication/profile errors and price sources. JSON includes
 the complete check results and projected costs regardless of verbosity. `--hours`
 is a cost scenario, not a shutdown schedule; clean up deployments when finished.
