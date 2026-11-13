@@ -61,6 +61,8 @@ def print_catalog_availability(
                 output.print(Text(f"{provider}: {result.reason}", style="dim"))
             if result.details:
                 output.print(Text(result.details, style="dim"))
+            for warning in result.estimate_warnings:
+                output.print(Text(warning, style="dim"))
         output.print("Publication does not verify regional capacity or account quota.", style="dim")
 
 

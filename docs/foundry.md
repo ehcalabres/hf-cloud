@@ -140,9 +140,35 @@ not GPU process stdout. Runtime monitoring depends on the
 
 ## Compare template estimates
 
+Foundry estimates work automatically, without a profile:
+
+```bash
+hf-cloud estimate Qwen/Qwen3-14B
+hf-cloud foundry estimate Qwen/Qwen3-14B --max-model-len 4096 --hours 24 --instance-count 2
+```
+
+HF Cloud reads allowed templates for the published model version, resolves template
+labels to concrete versions, and discovers each accelerator family, GPU count and
+machine-readable context limit. Template aliases are deduplicated. Archived or
+unreadable templates and templates without known GPU memory/context metadata are
+skipped; `--verbose` explains why. Other providers can still be compared if Foundry
+discovery fails or exceeds the shared 15-second catalog deadline.
+
 Foundry managed compute is billed per accelerator-hour, using the accelerator
-count in the selected template. It cannot be priced using an arbitrary Azure VM.
-Keep verified metadata in a profile, including `acceleratorsPerInstance`,
+count in the selected template. HF Cloud bundles a shared USD rate table for
+`GlobalManagedCompute`: A100 80 GB $3.95, H100 80 GB $7.91 and MI300X 192 GB $7.91
+per accelerator-hour. These are Microsoft's [published 2026-06-03 launch rates](https://devblogs.microsoft.com/foundry/announcing-foundry-managed-compute/),
+checked against the source on 2026-11-13, not current live quotes. A price entry
+does not establish model/hardware availability: only published templates are
+considered. H200 templates can be assessed for memory fit but remain unpriced
+until a sourced rate is added. Unknown rates cannot win cheapest.
+
+Foundry prices cannot be inferred from Azure ML VM prices, even for the same GPU
+family: they are separate services and billing units. Automatic deployment hints
+pin the estimated model version, template version and accelerator family.
+
+Profiles remain optional overrides for explicit template selection or a verified
+rate, including account-specific pricing. Keep metadata in a profile, including `acceleratorsPerInstance`,
 `maxModelLen`, `pricingSource`, `pricingObservedAt` and `pricingRegion`, with **one**
 of these rate fields:
 
@@ -154,7 +180,8 @@ of these rate fields:
 The two fields are mutually exclusive. Runtime duration and replica count then
 apply to the instance rate. This follows [Microsoft's billing formula](https://learn.microsoft.com/en-us/azure/foundry/concepts/managed-compute-overview#billing-quota-and-deployment-scopes).
 Use current rates from the pricing calculator for your accelerator family and
-scope; HF Cloud does not fetch a live Foundry quote or substitute Azure VM rates.
+scope when overriding the bundled rates. HF Cloud does not fetch a live Foundry
+quote or substitute Azure VM rates.
 
 ```bash
 hf-cloud foundry estimate Qwen/Qwen3-32B \
@@ -170,13 +197,14 @@ version and an active allowed template; its accelerator family and GPU count mus
 match the published template. Model asset references must use a concrete version.
 Template labels are resolved and checked against allowed concrete versions.
 Stale/incompatible profiles and failed checks are excluded before price ranking.
-Root estimates show Foundry publication even without a profile, but cannot rank
-it without template GPU/context/pricing data. A template's declared context
+Root estimates automatically rank published Foundry templates with usable bundled
+rates; profiles replace automatic template selection and pricing when supplied.
+A template's declared context
 cap must support the requested workload. The Foundry template itself controls
 runtime/context settings; the estimate does not rewrite it. Unknown prices sort
 last and cannot win cheapest. The launch price in the example profile is historical;
-verify your current rate before using it as a quote. Automatic deployment discovery
-does not infer template pricing or manufacture an estimate from VM prices.
+verify your current rate before using it as a quote. Automatic estimates join
+published templates with the bundled Foundry rate table, never with VM prices.
 
 Cost output leads with the comparison, followed by compact catalog status. Add
 `--verbose` to see full publication/profile errors and price sources. JSON includes

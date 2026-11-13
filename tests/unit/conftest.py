@@ -65,7 +65,7 @@ def estimate_catalog_checks(monkeypatch):
     from hf_cloud.core.catalog_availability import CatalogAvailability
     from hf_cloud.providers.azure_catalog import PublishedModel, asset_parts
 
-    def check(model_id, providers, *, foundry_profile=None):
+    def check(model_id, providers, *, foundry_profile=None, include_estimates=False):
         output = {}
         for provider in providers:
             if provider == "foundry" and foundry_profile:

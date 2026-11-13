@@ -255,7 +255,7 @@ Project continuous compute costs with a duration and replica count:
 
 ```bash
 <cli> estimate Qwen/Qwen2.5-32B-Instruct --provider azureml --hours 24 --instance-count 2
-<cli> foundry estimate Qwen/Qwen3-32B --profile PROFILE.json --hours 24 --instance-count 2
+<cli> foundry estimate Qwen/Qwen3-14B --hours 24 --instance-count 2
 ```
 
 The total is the hourly **instance rate × replicas × running hours**. GPU counts
@@ -270,8 +270,8 @@ on estimates it also shows individual price sources. JSON always retains the
 complete check results and pricing metadata, plus `costEstimate`,
 `deploymentPricePerHourUsd` and `estimatedCostUsd`.
 
-The primary `<cli> estimate` command compares all providers with bundled instance
-catalogs (SageMaker, Vertex AI and Azure ML). It highlights the cheapest
+The primary `<cli> estimate` command compares SageMaker, Vertex AI and Azure ML
+instance catalogs, plus published Foundry templates with bundled accelerator rates. It highlights the cheapest
 compatible instance and lists matches cheapest-first by default.
 `--sort most-expensive` reverses the price order, and `--limit` limits displayed
 rows while the cheapest summary still considers every compatible match. Unknown or
@@ -294,10 +294,14 @@ storage, network, and other charges are outside this comparison. Verify a
 deployment's price with [AWS pricing](https://aws.amazon.com/sagemaker/ai/pricing/),
 [Google Cloud pricing](https://cloud.google.com/vertex-ai/pricing), or
 [Azure pricing](https://azure.microsoft.com/en-us/pricing/details/machine-learning/).
-Cloud capacity and quotas are not checked. Foundry publication is shown in root
-estimates even without pricing data; it is only ranked when a verified profile
-provides its GPU layout, context cap and price. Include a published Foundry template
-with `--foundry-profile PROFILE.json` to compare it alongside the bundled catalogs.
+Cloud capacity and quotas are not checked. Foundry template layouts and context
+limits are discovered from the published catalog automatically; per-accelerator
+rates are multiplied by the template's GPU count. The bundled Global Managed
+Compute rates are Microsoft's published 2026-06-03 launch prices, not live quotes.
+Families without known rates remain unpriced. Templates without readable context
+limits or GPU layouts are skipped with details under `--verbose`.
+Use `--foundry-profile PROFILE.json` as an optional override for a verified rate
+or explicit template selection. Azure ML VM rates are never reused for Foundry.
 See [Foundry estimates](docs/foundry.md#compare-template-estimates) for template
 metadata and pricing inputs.
 

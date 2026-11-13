@@ -73,6 +73,7 @@ def _instance_output(match: InstanceMatch) -> dict[str, Any]:
                     "deploymentTemplateId",
                     "profilePath",
                     "pricingSource",
+                    "pricePerAcceleratorHourUsd",
                     "maxContextLength",
                 )
             }
@@ -194,7 +195,14 @@ def _print_deploy_command(
         "--name my-endpoint",
     ]
     if provider == "foundry":
-        parts.append(shlex.join(["--profile", instance["profilePath"]]))
+        if instance.get("profilePath"):
+            parts.append(shlex.join(["--profile", instance["profilePath"]]))
+        else:
+            parts.extend([
+                shlex.join(["--model-asset-id", instance["modelAssetId"]]),
+                shlex.join(["--template", instance["deploymentTemplateId"]]),
+                shlex.join(["--accelerator-type", instance["acceleratorType"]]),
+            ])
     else:
         instance_flag = "--machine-type" if provider == "vertex" else "--instance-type"
         parts.append(shlex.join([instance_flag, instance["instanceType"]]))
@@ -243,7 +251,7 @@ def estimate(
         typer.Option(
             "--foundry-profile",
             "--profile",
-            help="Published Foundry model/template profile to include in this comparison",
+            help="Optional override for Foundry template selection and pricing",
             rich_help_panel="Comparison",
         ),
     ] = None,
@@ -386,7 +394,10 @@ def estimate(
                 with (
                     console.status("Checking Microsoft model catalogs...") if not json_output else nullcontext()
                 ):
-                    checks = check_catalog_availability(model_id, microsoft, foundry_profile=profile)
+                    checks = check_catalog_availability(
+                        model_id, microsoft, foundry_profile=profile,
+                        **({"include_estimates": True} if "foundry" in microsoft and profile is None else {}),
+                    )
             excluded.update(
                 {
                     provider: result.reason or result.status
@@ -395,11 +406,14 @@ def estimate(
                 }
             )
             if "foundry" in microsoft and "foundry" not in excluded and profile is None:
-                excluded["foundry"] = (
-                    "Foundry estimates require --foundry-profile (or --profile) with published template GPU counts, context limit, and pricing metadata"
-                )
+                discovered = checks["foundry"].estimate_catalog
+                if discovered is None or not discovered.instances:
+                    excluded["foundry"] = (
+                        "No verified Foundry template layouts and context limits available for estimates. "
+                        "Use --verbose for details, or supply an explicit --foundry-profile."
+                    )
         catalogs = [
-            profile_catalog(foundry_profile, model_id)
+            (profile_catalog(foundry_profile, model_id) if profile else checks["foundry"].estimate_catalog)
             if provider == "foundry"
             else load_instance_data(provider)
             for provider in selected
@@ -458,7 +472,7 @@ def estimate(
             },
             "pricing": {
                 "source": "catalogs-and-profiles"
-                if any(catalog.provider == "foundry" for catalog in catalogs)
+                if profile is not None and any(catalog.provider == "foundry" for catalog in catalogs)
                 else "bundled-catalogs",
                 "currency": "USD",
                 "unit": "hour",
@@ -507,11 +521,7 @@ def estimate(
             for provider, result in checks.items():
                 matches = [row for row in rows if row["provider"] == provider]
                 if provider in excluded:
-                    estimate_labels[provider] = (
-                        "Needs priced profile"
-                        if result.status == "available" and provider == "foundry" and profile is None
-                        else "Excluded"
-                    )
+                    estimate_labels[provider] = "Excluded"
                 elif not matches:
                     estimate_labels[provider] = "No memory fit"
                 elif any(row["pricePerHourUsd"] is not None for row in matches):
@@ -521,11 +531,13 @@ def estimate(
             if checks:
                 console.print()
                 print_catalog_availability(checks, console, estimate_labels=estimate_labels, verbose=verbose)
-                if checks.get("foundry") and checks["foundry"].status == "available" and profile is None:
+                if checks.get("foundry") and checks["foundry"].status == "available" and "foundry" in excluded:
                     console.print(
-                        "Foundry pricing: add --foundry-profile FILE with a verified template rate.",
+                        "Foundry: no verified template layouts; use --verbose or supply --foundry-profile FILE.",
                         style="dim",
                     )
+                elif checks.get("foundry") and checks["foundry"].estimate_warnings and not verbose:
+                    console.print("Some Foundry templates were skipped; use --verbose for details.", style="dim")
                 if not verbose and any(result.status == "unknown" for result in checks.values()):
                     console.print(
                         "Some catalog checks failed. Run az login and retry; use --verbose for details.",

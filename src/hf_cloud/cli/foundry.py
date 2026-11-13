@@ -85,7 +85,7 @@ def deploy(
         ),
     ] = None,
     accelerator_type: Annotated[
-        Optional[str], typer.Option("--accelerator-type", help="A100_80GB, H100_80GB, or MI300_192GB")
+        Optional[str], typer.Option("--accelerator-type", help="A100_80GB, H100_80GB, H200_141GB, or MI300_192GB")
     ] = None,
     profile: Annotated[
         Optional[Path],

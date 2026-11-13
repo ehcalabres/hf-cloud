@@ -14,6 +14,7 @@ from hf_cloud.providers.azure_catalog import (
     asset_parts,
     validate_hub_id,
 )
+from hf_cloud.utils.hf_mem import InstanceData
 
 MICROSOFT_PROVIDERS = ("azureml", "foundry")
 
@@ -26,6 +27,8 @@ class CatalogAvailability:
     model: Optional[PublishedModel] = None
     template: Optional[dict] = None
     details: Optional[str] = None
+    estimate_catalog: Optional[InstanceData] = None
+    estimate_warnings: tuple[str, ...] = ()
 
     def to_dict(self):
         result = {"status": self.status}
@@ -42,10 +45,16 @@ class CatalogAvailability:
             )
         if self.template:
             result["template"] = self.template
+        if self.estimate_catalog is not None:
+            result["estimateCandidateCount"] = len(self.estimate_catalog.instances)
+        if self.estimate_warnings:
+            result["estimateWarnings"] = list(self.estimate_warnings)
         return result
 
 
-def _check(catalog: AzureCatalog, model_id: str, provider: str, profile: Optional[dict]) -> CatalogAvailability:
+def _check(
+    catalog: AzureCatalog, model_id: str, provider: str, profile: Optional[dict], include_estimates: bool = False
+) -> CatalogAvailability:
     version = None
     if provider == "foundry" and profile:
         try:
@@ -71,6 +80,14 @@ def _check(catalog: AzureCatalog, model_id: str, provider: str, profile: Optiona
             "Model is published but no managed-compute templates were returned for this version",
             model=model,
         )
+    if provider == "foundry" and not profile and include_estimates:
+        from hf_cloud.providers.foundry.pricing import template_catalog
+
+        candidates, warnings = template_catalog(catalog, model)
+        return CatalogAvailability(
+            provider, "available", model=model,
+            estimate_catalog=candidates, estimate_warnings=tuple(warnings),
+        )
     if provider != "foundry" or not profile:
         return CatalogAvailability(provider, "available", model=model)
     try:
@@ -93,6 +110,7 @@ def check_catalog_availability(
     providers=MICROSOFT_PROVIDERS,
     *,
     foundry_profile: Optional[dict] = None,
+    include_estimates: bool = False,
     timeout_s: float = 15,
 ) -> dict[str, CatalogAvailability]:
     """Check providers concurrently, excluding unknown results after a bounded wait.
@@ -112,7 +130,7 @@ def check_catalog_availability(
 
     def inspect(provider):
         try:
-            result = _check(catalog, model_id, provider, foundry_profile)
+            result = _check(catalog, model_id, provider, foundry_profile, include_estimates)
         except Exception as error:
             result = CatalogAvailability(provider, "unknown", f"Catalog check failed: {error}")
         queue.put((provider, result))

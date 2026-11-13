@@ -159,7 +159,7 @@ def test_verified_catalogs_enter_same_single_hfmem_comparison(comparison, estima
     assert any(row["provider"] == "azureml" for row in data["instances"])
     assert data["catalogAvailability"]["azureml"]["status"] == "available"
     assert data["catalogAvailability"]["foundry"]["status"] == "available"
-    assert "require --foundry-profile" in data["excludedProviders"]["foundry"]
+    assert "No verified Foundry template" in data["excludedProviders"]["foundry"]
     run.assert_called_once()
     estimate_catalog_checks.assert_called_once()
 

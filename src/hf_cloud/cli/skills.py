@@ -60,7 +60,8 @@ Standalone fallback:
    - `hf cloud estimate MODEL_ID --provider vertex`
    - `hf cloud estimate MODEL_ID --provider azureml`
    - `hf cloud estimate MODEL_ID --provider azureml --hours 24 --instance-count 2`
-   - `hf cloud foundry estimate MODEL_ID --profile PROFILE.json`
+   - `hf cloud foundry estimate MODEL_ID`
+   - `hf cloud foundry estimate MODEL_ID --profile PROFILE.json` (optional override)
 3. Deploy a model:
    - `hf cloud sagemaker deploy MODEL_ID --name NAME`
    - `hf cloud vertex deploy MODEL_ID --name NAME`
@@ -113,9 +114,12 @@ between them. Check quotas and delete unused or failed endpoints.
 Root estimates verify Azure ML/Foundry model publication before ranking. Unknown
 checks (login/network/service errors) and unavailable models are excluded, with
 reasons shown; other providers can still be estimated. Checks run concurrently
-with a 15-second deadline, with no persistent negative cache. Foundry profiles must
-match a published model version and active allowed template/GPU layout. A verified
-profile with context and price data is still required to rank Foundry. Azure ML
+with a 15-second deadline, with no persistent negative cache. Foundry automatically
+discovers published template GPU layouts and machine-readable context caps, then
+multiplies the GPU count by bundled Global per-accelerator rates. Rates are sourced
+2026-06-03 launch prices, not live quotes. Unknown rates remain unpriced; unknown
+GPU/context layouts are skipped. Profiles are optional template/pricing overrides
+and must match a published model version and active allowed template/GPU layout. Azure ML
 hints pin the verified catalog version. Catalog availability is separate from
 runtime workload compatibility, SKU support, capacity and quota. Never substitute
 Azure VM prices for Foundry managed compute.

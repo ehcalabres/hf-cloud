@@ -9,7 +9,7 @@ from typing import Any
 from hf_cloud.core.exceptions import ConfigurationError
 from hf_cloud.utils.hf_mem import InstanceData
 
-ACCELERATOR_MEMORY_GIB = {"A100_80GB": 80, "H100_80GB": 80, "MI300_192GB": 192}
+ACCELERATOR_MEMORY_GIB = {"A100_80GB": 80, "H100_80GB": 80, "H200_141GB": 141, "MI300_192GB": 192}
 UPGRADE_OPTIONS = {"NoAutoUpgrade", "OnceNewDefaultVersionAvailable", "OnceCurrentVersionExpired"}
 
 

@@ -310,7 +310,7 @@ def test_foundry_estimate_does_not_guess_templates(comparison):
     run, _ = comparison
     result = CliRunner().invoke(app, ["foundry", "estimate", "org/model", "--json"])
     assert result.exit_code == 1
-    assert "require --foundry-profile" in json.loads(result.stdout)["error"]
+    assert "No verified Foundry template" in json.loads(result.stdout)["error"]
     run.assert_not_called()
 
 
