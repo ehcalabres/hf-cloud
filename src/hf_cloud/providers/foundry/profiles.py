@@ -39,13 +39,32 @@ def load_profile(path: Path, model_id: str) -> dict[str, Any]:
     for key in ("acceleratorsPerInstance", "maxModelLen"):
         if key in data and (type(data[key]) is not int or data[key] < 1):
             raise ConfigurationError(f"Profile {key} must be a positive integer")
-    price = data.get("pricePerInstanceHourUsd")
+    instance_rate = data.get("pricePerInstanceHourUsd")
+    accelerator_rate = data.get("pricePerAcceleratorHourUsd")
+    if instance_rate is not None and accelerator_rate is not None:
+        raise ConfigurationError(
+            "Provide either pricePerInstanceHourUsd or pricePerAcceleratorHourUsd, not both"
+        )
     for key in ("pricingSource", "pricingObservedAt", "pricingRegion"):
         if data.get(key) is not None and not isinstance(data[key], str):
             raise ConfigurationError(f"Profile {key} must be a string")
-    if price is not None and (type(price) not in (int, float) or not math.isfinite(price) or price < 0):
-        raise ConfigurationError("Profile pricePerInstanceHourUsd must be a finite nonnegative number")
-    if price is not None and (
+    for key, price in (
+        ("pricePerInstanceHourUsd", instance_rate),
+        ("pricePerAcceleratorHourUsd", accelerator_rate),
+    ):
+        if price is not None and (type(price) not in (int, float) or not math.isfinite(price) or price < 0):
+            raise ConfigurationError(f"Profile {key} must be a finite nonnegative number")
+    if accelerator_rate is not None:
+        if "acceleratorsPerInstance" not in data:
+            raise ConfigurationError("pricePerAcceleratorHourUsd requires acceleratorsPerInstance")
+        try:
+            instance_rate = accelerator_rate * data["acceleratorsPerInstance"]
+        except OverflowError as error:
+            raise ConfigurationError("Calculated Foundry instance rate is too large") from error
+        if not math.isfinite(instance_rate):
+            raise ConfigurationError("Calculated Foundry instance rate is too large")
+        data["pricePerInstanceHourUsd"] = instance_rate
+    if instance_rate is not None and (
         not isinstance(data.get("pricingSource"), str) or not data["pricingSource"].strip()
     ):
         raise ConfigurationError("Include pricingSource when supplying a Foundry profile price")

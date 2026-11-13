@@ -165,8 +165,20 @@ matches the estimated workload, nor does it establish SKU compatibility, project
 quota or regional capacity. Those still need deployment validation. Foundry uses
 separate template pricing; Azure VM prices cannot be used as Foundry prices.
 
+Estimate compute spend for a deployment with two replicas running for 24 hours:
+
+```bash
+hf-cloud estimate Qwen/Qwen2.5-32B-Instruct --provider azureml --hours 24 --instance-count 2
+```
+
+The projection multiplies the bundled VM-hour rate by replicas and running hours.
+It assumes constant replicas and excludes storage, networking and other charges.
+The price table appears first; compact catalog status follows. Use `--verbose`
+for full catalog explanations and rate provenance, or `--json` for the complete
+results. `--hours` changes cost calculations only; it does not stop an endpoint.
+
 The Azure VM snapshot is `eastus`, Linux Consumption, observed 2026-11-12 through
 the [Retail Prices API](https://learn.microsoft.com/en-us/rest/api/cost-management/retail-prices/azure-retail-prices).
-Add replicas, storage and networking to calculate deployment cost. SDK serialization,
+Use `--instance-count` to include replicas; storage and networking remain additional costs. SDK serialization,
 export loading and endpoint lifecycle are tested offline; no live endpoint was
 provisioned while implementing this change.

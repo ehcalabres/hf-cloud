@@ -111,3 +111,20 @@ def compare_instances(
     priced.sort(key=lambda match: ((-1 if descending else 1) * hourly_price(match.instance), *identity(match)))
     unpriced.sort(key=identity)
     return InstanceSelection(priced + unpriced, selection.warnings, selection.reference)
+
+
+def compute_cost(instance: InstanceInfo, hours: float, instance_count: int) -> dict[str, Optional[float]]:
+    """Project compute spend; catalog prices already include every GPU in one instance."""
+    if not math.isfinite(hours) or hours <= 0 or type(instance_count) is not int or instance_count < 1:
+        raise HfMemError("Hours must be finite and positive, and instance count must be a positive integer")
+    price = hourly_price(instance)
+    if price is None:
+        return {"deploymentPricePerHourUsd": None, "estimatedCostUsd": None}
+    try:
+        hourly = price * instance_count
+        total = hourly * hours
+    except OverflowError as error:
+        raise HfMemError("Projected compute cost is too large") from error
+    if not math.isfinite(hourly) or not math.isfinite(total):
+        raise HfMemError("Projected compute cost is too large")
+    return {"deploymentPricePerHourUsd": round(hourly, 6), "estimatedCostUsd": round(total, 6)}

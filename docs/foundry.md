@@ -140,14 +140,25 @@ not GPU process stdout. Runtime monitoring depends on the
 
 ## Compare template estimates
 
-Foundry pricing is per model instance and template, not an arbitrary Azure VM.
-GPU memory counts alone cannot establish its cost. Keep verified metadata in a
-profile, including `acceleratorsPerInstance`, `maxModelLen`,
-`pricePerInstanceHourUsd`, `pricingSource`, `pricingObservedAt` and `pricingRegion`:
+Foundry managed compute is billed per accelerator-hour, using the accelerator
+count in the selected template. It cannot be priced using an arbitrary Azure VM.
+Keep verified metadata in a profile, including `acceleratorsPerInstance`,
+`maxModelLen`, `pricingSource`, `pricingObservedAt` and `pricingRegion`, with **one**
+of these rate fields:
+
+- `pricePerAcceleratorHourUsd`: the verified hourly rate for one accelerator.
+  HF Cloud multiplies it by `acceleratorsPerInstance` to obtain the instance rate.
+- `pricePerInstanceHourUsd`: the complete hourly rate for one model instance,
+  already including all of its accelerators.
+
+The two fields are mutually exclusive. Runtime duration and replica count then
+apply to the instance rate. This follows [Microsoft's billing formula](https://learn.microsoft.com/en-us/azure/foundry/concepts/managed-compute-overview#billing-quota-and-deployment-scopes).
+Use current rates from the pricing calculator for your accelerator family and
+scope; HF Cloud does not fetch a live Foundry quote or substitute Azure VM rates.
 
 ```bash
 hf-cloud foundry estimate Qwen/Qwen3-32B \
-  --profile examples/foundry/qwen3-32b-h100.json --max-model-len 4096
+  --profile examples/foundry/qwen3-32b-h100.json --max-model-len 4096 --hours 24 --instance-count 2
 hf-cloud estimate Qwen/Qwen3-32B \
   --foundry-profile examples/foundry/qwen3-32b-h100.json --max-model-len 4096
 ```
@@ -166,6 +177,11 @@ runtime/context settings; the estimate does not rewrite it. Unknown prices sort
 last and cannot win cheapest. The launch price in the example profile is historical;
 verify your current rate before using it as a quote. Automatic deployment discovery
 does not infer template pricing or manufacture an estimate from VM prices.
+
+Cost output leads with the comparison, followed by compact catalog status. Add
+`--verbose` to see full publication/profile errors and price sources. JSON includes
+the complete check results and projected costs regardless of verbosity. `--hours`
+is a cost scenario, not a shutdown schedule; clean up deployments when finished.
 
 ## Verification
 

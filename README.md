@@ -251,6 +251,25 @@ verify status is also an error; resources are retained for inspection.
 <cli> estimate meta-llama/Llama-2-7b-hf --provider vertex
 ```
 
+Project continuous compute costs with a duration and replica count:
+
+```bash
+<cli> estimate Qwen/Qwen2.5-32B-Instruct --provider azureml --hours 24 --instance-count 2
+<cli> foundry estimate Qwen/Qwen3-32B --profile PROFILE.json --hours 24 --instance-count 2
+```
+
+The total is the hourly **instance rate × replicas × running hours**. GPU counts
+inside an instance are already included in its rate. The default remains a
+one-instance hourly estimate. `--hours` only changes the estimate; it does not
+schedule endpoint shutdown. Storage, networking, autoscaling and other service
+charges are outside this projection. Deploy hints use the projected replica count.
+
+The cost comparison appears first, followed by a compact Microsoft availability
+table. Use `--verbose` on `estimate` or `catalog` for full check explanations;
+on estimates it also shows individual price sources. JSON always retains the
+complete check results and pricing metadata, plus `costEstimate`,
+`deploymentPricePerHourUsd` and `estimatedCostUsd`.
+
 The primary `<cli> estimate` command compares all providers with bundled instance
 catalogs (SageMaker, Vertex AI and Azure ML). It highlights the cheapest
 compatible instance and lists matches cheapest-first by default.

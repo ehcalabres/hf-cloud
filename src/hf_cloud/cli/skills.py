@@ -59,6 +59,7 @@ Standalone fallback:
    - `hf cloud estimate MODEL_ID --provider sagemaker`
    - `hf cloud estimate MODEL_ID --provider vertex`
    - `hf cloud estimate MODEL_ID --provider azureml`
+   - `hf cloud estimate MODEL_ID --provider azureml --hours 24 --instance-count 2`
    - `hf cloud foundry estimate MODEL_ID --profile PROFILE.json`
 3. Deploy a model:
    - `hf cloud sagemaker deploy MODEL_ID --name NAME`
@@ -118,6 +119,15 @@ profile with context and price data is still required to rank Foundry. Azure ML
 hints pin the verified catalog version. Catalog availability is separate from
 runtime workload compatibility, SKU support, capacity and quota. Never substitute
 Azure VM prices for Foundry managed compute.
+
+Cost projections use `--hours` and `--instance-count`, assuming constant replicas.
+Rates already include every GPU in an instance; do not multiply GPU count twice.
+Foundry profiles accept either a sourced `pricePerAcceleratorHourUsd` (converted
+using the template GPU count) or `pricePerInstanceHourUsd`, not both. These are
+compute estimates, excluding storage/network/other charges, and `--hours` does not
+schedule cleanup. Cost tables appear before compact Microsoft status. Add
+`--verbose` for full check explanations and pricing provenance; JSON retains all
+details and projected costs.
 
 Tip: if you use standalone installation, replace `hf cloud` with `hf-cloud`.
 """

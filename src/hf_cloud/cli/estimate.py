@@ -1,6 +1,7 @@
 """Canonical estimate command and provider-filtered compatibility aliases."""
 
 import json
+import math
 import shlex
 from contextlib import nullcontext
 from dataclasses import asdict
@@ -23,7 +24,7 @@ from hf_cloud.core.catalog_availability import (
     CatalogAvailability,
     check_catalog_availability,
 )
-from hf_cloud.core.estimation import InstanceMatch, compare_instances, hourly_price
+from hf_cloud.core.estimation import InstanceMatch, compare_instances, compute_cost, hourly_price
 from hf_cloud.core.exceptions import ConfigurationError
 from hf_cloud.providers.azure_catalog import validate_hub_id
 from hf_cloud.providers.foundry.profiles import load_profile, profile_catalog
@@ -80,7 +81,7 @@ def _instance_output(match: InstanceMatch) -> dict[str, Any]:
 
 
 def _price(value: Optional[float]) -> str:
-    return f"${value:.2f}" if value is not None else "—"
+    return f"${value:,.2f}" if value is not None else "—"
 
 
 def _accelerator_label(instance: dict[str, Any]) -> str:
@@ -130,19 +131,23 @@ class PriceSort(str, Enum):
     MOST_EXPENSIVE = "most-expensive"
 
 
-def _print_cheapest(cheapest: Optional[dict]) -> None:
+def _print_cheapest(cheapest: Optional[dict], hours: float = 1, instance_count: int = 1) -> None:
     if cheapest is None:
         console.print("No catalog prices available for compatible instances.", style="yellow")
         return
     details = Text(
-        f"{_price(cheapest['pricePerHourUsd'])}/h · {cheapest['provider']} · {cheapest['instanceType']}"
+        f"{_price(cheapest['deploymentPricePerHourUsd'])}/h · {cheapest['provider']} · {cheapest['instanceType']}"
     )
+    if hours != 1 or instance_count != 1:
+        details.append(
+            f"\n{_price(cheapest['estimatedCostUsd'])} for {hours:g} hours × {instance_count} instance(s)"
+        )
     console.print(
         Panel(details, title="Cheapest compatible instance", title_align="left", border_style="green")
     )
 
 
-def _print_comparison(rows: list[dict[str, Any]], total: int, order: PriceSort) -> None:
+def _print_comparison(rows: list[dict[str, Any]], total: int, order: PriceSort, hours: float = 1) -> None:
     table = Table(box=box.SIMPLE_HEAD, header_style="bold", padding=(0, 1))
     table.add_column("Provider", no_wrap=True)
     table.add_column("Instance", style="cyan", no_wrap=True)
@@ -150,7 +155,7 @@ def _print_comparison(rows: list[dict[str, Any]], total: int, order: PriceSort) 
     wide = console.width >= 105
     if wide:
         table.add_column("VRAM used / total", justify="right", no_wrap=True)
-    table.add_column("Est. $/h", justify="right", no_wrap=True)
+    table.add_column("Est. $/h" if hours == 1 else f"Est. {hours:g}h", justify="right", no_wrap=True)
     for row in rows:
         values = [
             row["provider"],
@@ -159,7 +164,7 @@ def _print_comparison(rows: list[dict[str, Any]], total: int, order: PriceSort) 
         ]
         if wide:
             values.append(f"{row['requiredVramGb']:,.2f} / {row['totalVramGb']:g}")
-        values.append(_price(row["pricePerHourUsd"]))
+        values.append(_price(row["deploymentPricePerHourUsd"] if hours == 1 else row["estimatedCostUsd"]))
         table.add_row(*values)
     console.print(table)
     console.print(
@@ -168,7 +173,7 @@ def _print_comparison(rows: list[dict[str, Any]], total: int, order: PriceSort) 
 
 
 def _print_deploy_command(
-    model_id: str, instance: dict[str, Any], options: EstimateOptions, safety_margin: float = 0.1
+    model_id: str, instance: dict[str, Any], options: EstimateOptions, instance_count: int = 1
 ) -> None:
     # Only print executable hints for supported Hub weight selections.
     if (
@@ -202,6 +207,11 @@ def _print_deploy_command(
         )
     if provider == "azureml" and instance.get("catalogVersion"):
         parts.append(shlex.join(["--catalog-version", instance["catalogVersion"]]))
+    if instance_count != 1:
+        if provider == "vertex":
+            parts.extend([f"--min-replicas {instance_count}", f"--max-replicas {instance_count}"])
+        else:
+            parts.append(f"--instance-count {instance_count}")
     command = " ".join(parts)
     if len(command) > console.width:
         command = " \\\n  ".join(parts)
@@ -262,6 +272,30 @@ def estimate(
     json_output: Annotated[
         bool, typer.Option("--json", "-j", help="Output comparison as JSON", rich_help_panel="Output")
     ] = False,
+    verbose: Annotated[
+        bool,
+        typer.Option(
+            "--verbose", "-v", help="Show full catalog exclusions and price sources", rich_help_panel="Output"
+        ),
+    ] = False,
+    hours: Annotated[
+        float,
+        typer.Option(
+            "--hours",
+            help="Continuous running hours to project compute costs",
+            rich_help_panel="Cost projection",
+        ),
+    ] = 1,
+    instance_count: Annotated[
+        int,
+        typer.Option(
+            "--instance-count",
+            "-c",
+            min=1,
+            help="Replicas for cost projection; does not change GPUs within an instance",
+            rich_help_panel="Cost projection",
+        ),
+    ] = 1,
     show_all: Annotated[
         bool,
         typer.Option(
@@ -305,6 +339,8 @@ def estimate(
 ) -> None:
     """Compare compatible instances across providers using bundled hourly price estimates."""
     try:
+        if not math.isfinite(hours) or hours <= 0:
+            raise HfMemError("--hours must be finite and greater than zero")
         options = EstimateOptions(
             revision=revision,
             file=file,
@@ -387,6 +423,7 @@ def estimate(
             for match in selection.matches
         ]
         for row in rows:
+            row.update(compute_cost(row, hours, instance_count))
             publication = checks.get(row["provider"])
             if publication and publication.model:
                 row["modelAssetId"] = publication.model.asset_id
@@ -413,6 +450,12 @@ def estimate(
             "providers": selected,
             "sort": sort.value,
             "safetyMargin": safety_margin,
+            "costEstimate": {
+                "hours": hours,
+                "instanceCount": instance_count,
+                "basis": "compute-only",
+                "replicas": "constant",
+            },
             "pricing": {
                 "source": "catalogs-and-profiles"
                 if any(catalog.provider == "foundry" for catalog in catalogs)
@@ -449,34 +492,61 @@ def estimate(
         if json_output:
             typer.echo(json.dumps(output, indent=2))
         else:
-            print_catalog_availability(checks, console)
-            for provider, reason in excluded.items():
-                console.print(Text(f"{provider} excluded from estimates: {reason}", style="yellow"))
             _print_workload(console, diagnostics, options, safety_margin)
             if rows:
-                _print_cheapest(cheapest)
-                _print_comparison(output["instances"], len(rows), sort)
+                _print_cheapest(cheapest, hours, instance_count)
+                _print_comparison(output["instances"], len(rows), sort, hours)
             else:
                 console.print("No compatible instances found.", style="yellow")
-            basis = (
-                "catalog and supplied profile"
-                if any(catalog.provider == "foundry" for catalog in catalogs)
-                else "bundled catalog"
-            )
-            console.print(f"\nPricing: {basis} estimates in USD/hour; not live quotes.", style="dim")
-            for catalog in catalogs:
+            if hours != 1 or instance_count != 1:
                 console.print(
-                    f"  {catalog.provider}: {catalog.last_updated or 'date unknown'} · "
-                    f"{catalog.pricing_region or 'pricing region unspecified'}",
+                    f"Compute projection: {hours:g} running hours × {instance_count} instance(s), held constant.",
                     style="dim",
                 )
-                if catalog.pricing_source:
-                    console.print(Text(f"  Price source: {catalog.pricing_source}", style="dim"))
-            if "azureml" in selected:
-                console.print(
-                    "Microsoft catalog publication is checked before ranking. Runtime settings, SKU compatibility, regional capacity and quota still require deployment validation.",
-                    style="dim",
-                )
+            estimate_labels = {}
+            for provider, result in checks.items():
+                matches = [row for row in rows if row["provider"] == provider]
+                if provider in excluded:
+                    estimate_labels[provider] = (
+                        "Needs priced profile"
+                        if result.status == "available" and provider == "foundry" and profile is None
+                        else "Excluded"
+                    )
+                elif not matches:
+                    estimate_labels[provider] = "No memory fit"
+                elif any(row["pricePerHourUsd"] is not None for row in matches):
+                    estimate_labels[provider] = "Included"
+                else:
+                    estimate_labels[provider] = "Price unavailable"
+            if checks:
+                console.print()
+                print_catalog_availability(checks, console, estimate_labels=estimate_labels, verbose=verbose)
+                if checks.get("foundry") and checks["foundry"].status == "available" and profile is None:
+                    console.print(
+                        "Foundry pricing: add --foundry-profile FILE with a verified template rate.",
+                        style="dim",
+                    )
+                if not verbose and any(result.status == "unknown" for result in checks.values()):
+                    console.print(
+                        "Some catalog checks failed. Run az login and retry; use --verbose for details.",
+                        style="dim",
+                    )
+            if verbose:
+                for provider, reason in excluded.items():
+                    if checks[provider].reason != reason:
+                        console.print(Text(f"{provider} excluded: {reason}", style="dim"))
+                for catalog in catalogs:
+                    console.print(
+                        Text(
+                            f"{catalog.provider} prices: {catalog.last_updated or 'date unknown'} · {catalog.pricing_region or 'region unspecified'}",
+                            style="dim",
+                        )
+                    )
+                    if catalog.pricing_source:
+                        console.print(Text(f"  Source: {catalog.pricing_source}", style="dim"))
+            dates = "; ".join(f"{catalog.provider} {catalog.last_updated or 'undated'}" for catalog in catalogs)
+            console.print(Text(f"Pricing: compute-only USD estimates; not live quotes. {dates}", style="dim"))
+            console.print("Storage, network, autoscaling and other service charges are excluded.", style="dim")
             if output["unpricedCount"]:
                 console.print(
                     f"{output['unpricedCount']} compatible instances have no usable price; excluded from the price range.",
@@ -484,7 +554,7 @@ def estimate(
                 )
             _print_diagnostics(console, diagnostics)
             if cheapest is not None:
-                _print_deploy_command(model_id, cheapest, options, safety_margin)
+                _print_deploy_command(model_id, cheapest, options, instance_count)
         if "error" in output:
             raise typer.Exit(code=1)
     except (HfMemError, ConfigurationError) as error:
