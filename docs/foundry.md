@@ -46,6 +46,12 @@ HF Cloud does not create accounts or assign roles.
 
 ## Hub IDs, models and templates
 
+To compare the two Microsoft catalogs in one command, use
+`hf-cloud catalog MODEL_ID` (or add `--json`). It checks Azure ML and Foundry
+independently, distinguishes missing models from checks that failed, and links to
+available model pages. No workspace/account defaults are needed for discovery.
+
+
 `foundry catalog MODEL_ID` uses the
 [documented Hub-to-Azure lookup](https://huggingface.co/docs/microsoft-azure/foundry/models),
 then verifies the published model in the `azure-huggingface` registry. It lists
@@ -147,7 +153,14 @@ hf-cloud estimate Qwen/Qwen3-32B \
 ```
 
 The second command compares the supplied template with SageMaker, Vertex and Azure
-ML hardware catalogs in one hf-mem metadata session. A template's declared context
+ML hardware catalogs in one hf-mem metadata session. Microsoft model publication is
+verified first. For Foundry, the profile must name this Hub model's published
+version and an active allowed template; its accelerator family and GPU count must
+match the published template. Model asset references must use a concrete version.
+Template labels are resolved and checked against allowed concrete versions.
+Stale/incompatible profiles and failed checks are excluded before price ranking.
+Root estimates show Foundry publication even without a profile, but cannot rank
+it without template GPU/context/pricing data. A template's declared context
 cap must support the requested workload. The Foundry template itself controls
 runtime/context settings; the estimate does not rewrite it. Unknown prices sort
 last and cannot win cheapest. The launch price in the example profile is historical;

@@ -10,10 +10,28 @@ from huggingface_hub.utils import HFValidationError, validate_repo_id
 
 from hf_cloud.core.exceptions import ConfigurationError, ProviderError
 
+
+class CatalogModelUnavailable(ConfigurationError):
+    """A catalog lookup confirmed absence, rather than an authentication/service failure."""
+
+
 LOOKUP_URL = "https://get-azure-ai-url.azurewebsites.net/api/get-azure-ai-url"
 ASSET_PATTERN = re.compile(
     r"azureml://registries/([A-Za-z0-9_-]+)/(models|deploymenttemplates)/([A-Za-z0-9_.-]+)/(versions|labels)/([A-Za-z0-9_.-]+)"
 )
+
+
+def _is_not_found(error: Exception) -> bool:
+    if getattr(error, "status_code", None) == 404:
+        return True
+    try:
+        from azure.ai.ml.exceptions import ValidationErrorType, ValidationException
+        from azure.core.exceptions import ResourceNotFoundError
+    except ImportError:
+        return False
+    return isinstance(error, ResourceNotFoundError) or (
+        isinstance(error, ValidationException) and error.error_type == ValidationErrorType.RESOURCE_NOT_FOUND
+    )
 
 
 def validate_hub_id(model_id: str) -> str:
@@ -48,7 +66,7 @@ def lookup_foundry_model(model_id: str) -> tuple[str, str, str]:
                 headers={"User-Agent": "hf-cloud", "Accept": "application/json"},
             )
         if response.status_code == 404:
-            raise ConfigurationError(
+            raise CatalogModelUnavailable(
                 f"{model_id} is not published in the Foundry catalog. Check https://ai.azure.com or request its addition from the model's Hub Deploy menu."
             )
         if not response.is_success:
@@ -73,10 +91,12 @@ def lookup_foundry_model(model_id: str) -> tuple[str, str, str]:
         ):
             raise ValueError("Unexpected catalog URL")
         name, version, registry = match.groups()
-        if registry != "azure-huggingface":
-            raise ConfigurationError(
+        if registry.lower() == "huggingface":
+            raise CatalogModelUnavailable(
                 f"{model_id} resolves to the Azure ML / Foundry classic catalog. Use hf-cloud azureml deploy {model_id}, with an Azure ML workspace or classic hub-based project."
             )
+        if registry != "azure-huggingface":
+            raise ProviderError("foundry", "Catalog lookup returned an unrecognized registry")
         return registry, name, version
     except (ConfigurationError, ProviderError):
         raise
@@ -109,6 +129,7 @@ class AzureCatalog:
         self._credential = credential
         self._clients = {}
         self._models = {}
+        self._templates = {}
 
     def registry(self, name: str):
         if name not in self._clients:
@@ -144,9 +165,9 @@ class AzureCatalog:
         except Exception as error:
             if isinstance(error, (ConfigurationError, ProviderError)):
                 raise
-            if getattr(error, "status_code", None) == 404:
+            if _is_not_found(error):
                 alternative = "foundry" if backend == "azureml" else "azureml"
-                raise ConfigurationError(
+                raise CatalogModelUnavailable(
                     f"{hub_id} is not published in the {backend} catalog"
                     + (f" at version {version}" if version else "")
                     + f". Check the model catalog or try hf-cloud {alternative} catalog {hub_id}. HF Cloud only deploys published assets; it does not build custom images."
@@ -198,6 +219,33 @@ class AzureCatalog:
         self._models[(hub_id, backend, resolved_version)] = published
         return published
 
+    def template(self, reference: str):
+        """Resolve and cache an active published template, including label-to-version resolution."""
+        if reference in self._templates:
+            return self._templates[reference]
+        registry, name, kind, identifier = asset_parts(reference, "deploymenttemplates", "azure-huggingface")
+        try:
+            template = self.registry(registry).deployment_templates.get(
+                name=name, **({"version": identifier} if kind == "versions" else {"label": identifier})
+            )
+        except Exception as error:
+            if _is_not_found(error):
+                raise ConfigurationError("The selected published template no longer exists") from error
+            raise ProviderError(
+                "foundry", "Cannot read the published deployment template", details=str(error)
+            ) from error
+        if not template.name or not template.version:
+            raise ConfigurationError("Published template is missing its name or version")
+        if getattr(template, "stage", None) == "Archived":
+            raise ConfigurationError("The published template is archived; select an active template")
+        asset_parts(
+            f"azureml://registries/{registry}/deploymenttemplates/{template.name}/versions/{template.version}",
+            "deploymenttemplates",
+            registry,
+        )
+        self._templates[reference] = template
+        return template
+
     def foundry_template(
         self, model: PublishedModel, selected: Optional[str] = None, accelerator: Optional[str] = None
     ) -> dict[str, Any]:
@@ -207,9 +255,23 @@ class AzureCatalog:
         if selected:
             if selected.startswith("azureml://"):
                 if selected not in candidates:
-                    raise ConfigurationError(
-                        "The selected template is not published for this model version; run foundry catalog MODEL_ID"
-                    )
+                    _, name, _, _ = asset_parts(selected, "deploymenttemplates", model.registry)
+                    matching = [
+                        uri
+                        for uri in candidates
+                        if asset_parts(uri, "deploymenttemplates", model.registry)[1] == name
+                    ]
+                    if not matching:
+                        raise ConfigurationError(
+                            "The selected template is not published for this model version; run foundry catalog MODEL_ID"
+                        )
+                    selected_template = self.template(selected)
+                    if not any(
+                        str(self.template(uri).version) == str(selected_template.version) for uri in matching
+                    ):
+                        raise ConfigurationError(
+                            "The selected template version is not published for this model version"
+                        )
                 target = selected
             else:
                 matching = [
@@ -227,23 +289,7 @@ class AzureCatalog:
                 "This model has no unambiguous published default template. Run hf-cloud foundry catalog MODEL_ID and select --template NAME."
             )
         registry, name, kind, identifier = asset_parts(target, "deploymenttemplates", model.registry)
-        try:
-            template = self.registry(registry).deployment_templates.get(
-                name=name, **({"version": identifier} if kind == "versions" else {"label": identifier})
-            )
-        except Exception as error:
-            raise ProviderError(
-                "foundry", "Cannot read the published deployment template", details=str(error)
-            ) from error
-        if not template.name or not template.version:
-            raise ConfigurationError("Published template is missing its name or version")
-        if getattr(template, "stage", None) == "Archived":
-            raise ConfigurationError("The published template is archived; select an active template")
-        asset_parts(
-            f"azureml://registries/{registry}/deploymenttemplates/{template.name}/versions/{template.version}",
-            "deploymenttemplates",
-            model.registry,
-        )
+        template = self.template(target)
         maps = template.accelerator_maps or []
         eligible = (
             [item for item in maps if item.accelerator_type == accelerator]

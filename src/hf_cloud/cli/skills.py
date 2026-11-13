@@ -52,7 +52,9 @@ Standalone fallback:
    - `hf cloud providers configure vertex`
    - `hf cloud providers configure azureml`
    - `hf cloud providers configure foundry` (install `hf-cloud[foundry]` first)
-2. Compare instance price estimates before deployment:
+2. Check Microsoft model availability and compare prices before deployment:
+   - `hf cloud catalog MODEL_ID`
+   - `hf cloud catalog MODEL_ID --json`
    - `hf cloud estimate MODEL_ID`
    - `hf cloud estimate MODEL_ID --provider sagemaker`
    - `hf cloud estimate MODEL_ID --provider vertex`
@@ -107,9 +109,14 @@ go before the subcommand. Catalog discovery needs Azure login even with
 previewed offline. The catalogs and quota pools differ; never silently switch
 between them. Check quotas and delete unused or failed endpoints.
 
-Root estimates compare memory fits and catalog prices. Azure ML rows do not prove
-model publication or that the published runtime matches the estimated workload.
-Foundry estimates need template GPU/context/pricing data in a profile; never use
+Root estimates verify Azure ML/Foundry model publication before ranking. Unknown
+checks (login/network/service errors) and unavailable models are excluded, with
+reasons shown; other providers can still be estimated. Checks run concurrently
+with a 15-second deadline, with no persistent negative cache. Foundry profiles must
+match a published model version and active allowed template/GPU layout. A verified
+profile with context and price data is still required to rank Foundry. Azure ML
+hints pin the verified catalog version. Catalog availability is separate from
+runtime workload compatibility, SKU support, capacity and quota. Never substitute
 Azure VM prices for Foundry managed compute.
 
 Tip: if you use standalone installation, replace `hf cloud` with `hf-cloud`.

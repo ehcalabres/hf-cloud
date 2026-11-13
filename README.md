@@ -90,6 +90,21 @@ repositories. Both paths accept a Hugging Face model ID:
 | `azureml` | Azure ML workspace or Foundry classic hub-based project | You want a managed online endpoint with a VM size and replica count |
 | `foundry` | Current Foundry account (`AIServices`) | You want Foundry managed compute with a published template and accelerator family (preview) |
 
+### Find where a model is available
+
+```bash
+uv run hf-cloud catalog deepseek-ai/DeepSeek-V4.1-Flash
+uv run hf-cloud catalog deepseek-ai/DeepSeek-V4.1-Flash --json
+```
+
+This checks Azure ML and current Foundry independently and links to each available
+catalog model. It distinguishes **Available**, **Not available**, and **Could not
+verify** (login, network or service failures). Registry reads use Azure credentials;
+run `az login` first. No workspace/account configuration is required for discovery.
+Checks run concurrently with a 15-second overall deadline and are fresh on each
+command. An incomplete `catalog` check exits nonzero, while a confirmed absence
+is a successful discovery result. No cloud resources are created.
+
 ### Azure ML / Foundry classic
 
 ```bash
@@ -247,10 +262,11 @@ Human-readable output ends with a deployment command for the cheapest compatible
 instance, including Vertex AI's accelerator type and count. The hint considers all
 matches regardless of `--sort` or `--limit`; change `my-endpoint` to your endpoint
 name. Hints are omitted for local models, selected files/revisions and unsupported
-weight formats. Azure ML hints select hardware only: the published model controls
-the runtime and context settings. Azure ML memory estimates do not establish
-catalog availability; verify it using `azureml catalog MODEL_ID`. Configure the
-serving workload to match the estimate on providers that support runtime options.
+weight formats. Microsoft model publication is checked before matching or ranking:
+unavailable or unverified providers are excluded, with reasons shown in the output.
+Azure ML hints pin the verified catalog version. The published model controls the
+runtime and context settings; configure serving workloads on providers that support
+runtime options. Publication checks do not guarantee SKU compatibility or quota.
 
 These are **bundled catalog estimates in USD per instance-hour**, not live
 quotes. Catalog dates and pricing regions (or their absence) are displayed and
@@ -259,14 +275,18 @@ storage, network, and other charges are outside this comparison. Verify a
 deployment's price with [AWS pricing](https://aws.amazon.com/sagemaker/ai/pricing/),
 [Google Cloud pricing](https://cloud.google.com/vertex-ai/pricing), or
 [Azure pricing](https://azure.microsoft.com/en-us/pricing/details/machine-learning/).
-Cloud capacity and quotas are not checked. Include a published Foundry template
+Cloud capacity and quotas are not checked. Foundry publication is shown in root
+estimates even without pricing data; it is only ranked when a verified profile
+provides its GPU layout, context cap and price. Include a published Foundry template
 with `--foundry-profile PROFILE.json` to compare it alongside the bundled catalogs.
 See [Foundry estimates](docs/foundry.md#compare-template-estimates) for template
 metadata and pricing inputs.
 
 Global JSON output includes `cheapest`, `mostExpensive`, `totalCompatible`,
 `pricedCount`, `unpricedCount`, ranked `instances` with their `provider`, and
-`pricing` metadata. `--provider` can be repeated to select providers. A shared
+`pricing` metadata. Microsoft results also include `catalogAvailability` and
+`excludedProviders` when applicable. Unknown checks are excluded from recommendations,
+while other providers can still produce a successful estimate. `--provider` can be repeated to select providers. A shared
 `--safety-margin` defaults to 0.1 so the comparison uses the same reserve policy
 for every provider. The model-selection and workload options below also apply.
 
@@ -365,6 +385,7 @@ dependencies from HF-Cloud's provider SDKs.
 | `<cli> providers ls` | List available providers |
 | `<cli> providers configure <provider>` | Configure provider credentials |
 | `<cli> providers versions` | Inspect installed provider SDKs and stable PyPI releases |
+| `<cli> catalog <model>` | Show availability in Azure ML and Foundry side by side |
 | `<cli> azureml catalog <model>` | Check and pin a published Azure ML model |
 | `<cli> foundry catalog <model>` | Resolve a published Foundry model and its templates |
 | `<cli> azureml update <id> --instance-count N` | Scale Azure ML endpoint replicas |

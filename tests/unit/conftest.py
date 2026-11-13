@@ -57,3 +57,28 @@ def comparison(monkeypatch):
     monkeypatch.setattr("hf_cloud.cli.estimate.list_instance_providers", lambda: list(catalogs))
     monkeypatch.setattr("hf_cloud.cli.estimate.load_instance_data", lambda name: catalogs[name])
     return run, catalogs
+
+
+@pytest.fixture(autouse=True)
+def estimate_catalog_checks(monkeypatch):
+    """Existing estimator tests use published fake models, never the real Azure catalog."""
+    from hf_cloud.core.catalog_availability import CatalogAvailability
+    from hf_cloud.providers.azure_catalog import PublishedModel, asset_parts
+
+    def check(model_id, providers, *, foundry_profile=None):
+        output = {}
+        for provider in providers:
+            if provider == "foundry" and foundry_profile:
+                registry, name, _, version = asset_parts(foundry_profile["modelAssetId"], "models")
+                model = PublishedModel(
+                    model_id, registry, name, version, templates=(foundry_profile["deploymentTemplateId"],)
+                )
+            else:
+                registry = "HuggingFace" if provider == "azureml" else "azure-huggingface"
+                model = PublishedModel(model_id, registry, "org-model", "7")
+            output[provider] = CatalogAvailability(provider, "available", model=model)
+        return output
+
+    mock = Mock(side_effect=check)
+    monkeypatch.setattr("hf_cloud.cli.estimate.check_catalog_availability", mock)
+    return mock

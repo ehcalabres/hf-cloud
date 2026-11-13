@@ -3,6 +3,7 @@
 import typer
 
 from hf_cloud.cli.azureml import azureml_app
+from hf_cloud.cli.catalog import catalog as catalog_command
 from hf_cloud.cli.estimate import estimate as estimate_command
 from hf_cloud.cli.foundry import foundry_app
 from hf_cloud.cli.global_commands import list_all_deployments, providers_app
@@ -27,6 +28,7 @@ app.add_typer(skills_app, name="skills", help="Manage AI assistant skills")
 
 # Register global commands
 app.command(name="estimate")(estimate_command)
+app.command(name="catalog")(catalog_command)
 app.command(name="ls", help="List all deployments across all providers.")(list_all_deployments)
 app.add_typer(providers_app, name="providers", help="Manage provider configurations")
 providers_app.command(name="versions")(sdk_versions_command)

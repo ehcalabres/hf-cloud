@@ -141,3 +141,21 @@ def test_real_model_metadata_exposes_publisher_template_references(monkeypatch):
     published = catalog.resolve("org/model", "foundry")
     assert published.asset_id == model_id and published.default_template == template_id
     assert catalog.foundry_template(published)["deployment_template"] == template_id
+
+
+def test_sdk_latest_label_absence_is_not_an_authentication_failure():
+    from azure.ai.ml.exceptions import ErrorTarget, ValidationErrorType, ValidationException
+
+    from hf_cloud.providers.azure_catalog import AzureCatalog, CatalogModelUnavailable
+
+    catalog = AzureCatalog()
+    registry = Mock()
+    catalog._clients["HuggingFace"] = registry
+    registry.models.get.side_effect = ValidationException(
+        message="Asset is not published",
+        no_personal_data_message="Asset is not published",
+        target=ErrorTarget.ASSET,
+        error_type=ValidationErrorType.RESOURCE_NOT_FOUND,
+    )
+    with pytest.raises(CatalogModelUnavailable):
+        catalog.resolve("org/model", "azureml")

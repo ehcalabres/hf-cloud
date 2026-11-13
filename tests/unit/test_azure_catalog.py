@@ -168,3 +168,27 @@ def test_ambiguous_or_incompatible_templates_are_not_guessed():
     with pytest.raises(ConfigurationError, match="accelerator-type"):
         catalog.foundry_template(published, "qwen-h100")
     assert catalog.foundry_template(published, "qwen-h100", "A100_80GB")["accelerator_type"] == "A100_80GB"
+
+
+def test_profile_label_must_resolve_to_an_allowed_template_version():
+    catalog = AzureCatalog()
+    client = Mock()
+    catalog._clients["azure-huggingface"] = client
+    allowed = TEMPLATE.replace("/labels/latest", "/versions/5")
+    published = PublishedModel("org/model", "azure-huggingface", "org--model", "3", templates=(allowed,))
+
+    def template(**kwargs):
+        return NS(
+            name="qwen-h100",
+            version=kwargs.get("version", "5"),
+            stage="Active",
+            accelerator_maps=[
+                NS(accelerator_type="H100_80GB", number_of_accelerators_per_model_instance=1, default=True),
+            ],
+        )
+
+    client.deployment_templates.get.side_effect = template
+    result = catalog.foundry_template(published, TEMPLATE, "H100_80GB")
+    assert result["deployment_template"] == allowed
+    with pytest.raises(ConfigurationError, match="version is not published"):
+        catalog.foundry_template(published, allowed.replace("/versions/5", "/versions/6"), "H100_80GB")

@@ -70,7 +70,7 @@ def test_real_workload_and_per_device_overhead(local_model):
     assert large.fit.max_model_len == 1024
 
 
-@pytest.mark.parametrize("provider", ["sagemaker", "vertex", "azureml"])
+@pytest.mark.parametrize("provider", ["sagemaker", "vertex"])
 def test_real_cli_estimates_for_each_provider(local_model, provider, monkeypatch):
     catalog = InstanceData(
         provider,
@@ -156,7 +156,8 @@ def test_real_global_comparison_uses_one_worker_for_all_providers(local_model, m
     data = json.loads(result.stdout)
     assert data["cheapest"]["provider"] == "vertex"
     assert data["mostExpensive"]["provider"] == "sagemaker"
-    assert data["totalCompatible"] == 3
+    assert data["totalCompatible"] == 2
+    assert data["catalogAvailability"]["azureml"]["status"] == "unsupported-selection"
     run.assert_called_once()
     request = json.loads(run.call_args.kwargs["input_text"])
     assert request["layouts"] == [[1, 24]]

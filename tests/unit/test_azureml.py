@@ -234,19 +234,19 @@ def test_unsupported_model_fails_before_deployment_or_export(monkeypatch, tmp_pa
     assert not directory.exists()
 
 
-def test_estimates_are_explicitly_memory_fit_only(comparison):
+def test_estimates_verify_publication_and_preserve_catalog_runtime(comparison):
     run, catalogs = comparison
     catalogs["azureml"] = load_instance_data("azureml")
     result = CliRunner().invoke(app, ["estimate", "org/model", "--provider", "azureml", "--json"])
     data = json.loads(result.stdout)
     assert result.exit_code == 0 and data["cheapest"]["provider"] == "azureml"
-    assert data["deploymentChecks"]["azureml"]["catalogAvailability"] == "not-checked"
+    assert data["catalogAvailability"]["azureml"]["status"] == "available"
     result = CliRunner().invoke(app, ["azureml", "estimate", "org/model", "--max-model-len", "1024"])
     assert result.exit_code == 0
     output = result.stdout.replace("\\\n  ", " ")
     assert "hf-cloud azureml deploy org/model" in output
     assert "--max-model-len 1024" not in output
-    assert "hardware memory fit only" in output.lower()
+    assert "catalog model availability verified" in output.lower()
     assert run.call_count == 2
 
 

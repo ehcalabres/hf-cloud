@@ -17,9 +17,16 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
+from hf_cloud.cli.catalog import print_catalog_availability
+from hf_cloud.core.catalog_availability import (
+    MICROSOFT_PROVIDERS,
+    CatalogAvailability,
+    check_catalog_availability,
+)
 from hf_cloud.core.estimation import InstanceMatch, compare_instances, hourly_price
 from hf_cloud.core.exceptions import ConfigurationError
-from hf_cloud.providers.foundry.profiles import profile_catalog
+from hf_cloud.providers.azure_catalog import validate_hub_id
+from hf_cloud.providers.foundry.profiles import load_profile, profile_catalog
 from hf_cloud.utils.hf_mem import (
     HF_MEM_VERSION,
     EstimateOptions,
@@ -193,6 +200,8 @@ def _print_deploy_command(
                 shlex.join(["--accelerator-count", str(instance["numGpu"])]),
             ]
         )
+    if provider == "azureml" and instance.get("catalogVersion"):
+        parts.append(shlex.join(["--catalog-version", instance["catalogVersion"]]))
     command = " ".join(parts)
     if len(command) > console.width:
         command = " \\\n  ".join(parts)
@@ -201,7 +210,7 @@ def _print_deploy_command(
     note = (
         "The published template controls the runtime and context settings."
         if provider == "foundry"
-        else "Hardware memory fit only; Azure ML deploy checks the published catalog model. Its runtime settings may differ from this estimate."
+        else "Catalog model availability verified; Azure ML uses the published runtime, whose settings may differ from this estimate."
         if provider == "azureml"
         else "Match the deployment engine, sharding and workload to this estimate."
     )
@@ -307,31 +316,58 @@ def estimate(
         )
         options.validate()
         validate_safety_margin(safety_margin)
-        available = list_instance_providers()
-        if foundry_profile is not None:
-            available = [*available, "foundry"]
+        available = list(dict.fromkeys([*list_instance_providers(), "foundry"]))
         selected = list(dict.fromkeys(name.lower() for name in providers)) if providers else available
-        if "foundry" in selected and foundry_profile is None:
-            raise HfMemError(
-                "Foundry estimates require --foundry-profile (or --profile) with published template GPU counts, context limit, and pricing metadata"
-            )
-        if "foundry" in selected and (
-            options.revision or options.file or options.format not in (None, "safetensors")
-        ):
-            raise HfMemError(
-                "Published Foundry profiles cannot follow --revision, --file, or non-Safetensors weight selection"
-            )
         unsupported = [name for name in selected if name not in available]
         if unsupported or not selected:
             raise HfMemError(
                 "No estimate catalog for requested providers",
                 details=f"Unsupported: {', '.join(unsupported) or 'none available'}. Available: {', '.join(available)}",
             )
+        microsoft = [provider for provider in selected if provider in MICROSOFT_PROVIDERS]
+        profile = load_profile(foundry_profile, model_id) if foundry_profile and "foundry" in selected else None
+        checks = {}
+        excluded = {}
+        selection_reason = None
+        if microsoft:
+            try:
+                validate_hub_id(model_id)
+            except ConfigurationError:
+                selection_reason = "Published Microsoft catalog deployments require a namespaced Hub model ID; local paths and URLs cannot be deployed there"
+            if (
+                (not selection_reason and Path(model_id).exists())
+                or options.revision
+                or options.file
+                or options.format not in (None, "safetensors")
+            ):
+                selection_reason = "Published Microsoft catalog models cannot follow --revision, --file, local paths, or non-Safetensors weight selection"
+            if selection_reason:
+                checks = {
+                    provider: CatalogAvailability(provider, "unsupported-selection", selection_reason)
+                    for provider in microsoft
+                }
+            else:
+                with (
+                    console.status("Checking Microsoft model catalogs...") if not json_output else nullcontext()
+                ):
+                    checks = check_catalog_availability(model_id, microsoft, foundry_profile=profile)
+            excluded.update(
+                {
+                    provider: result.reason or result.status
+                    for provider, result in checks.items()
+                    if result.status != "available"
+                }
+            )
+            if "foundry" in microsoft and "foundry" not in excluded and profile is None:
+                excluded["foundry"] = (
+                    "Foundry estimates require --foundry-profile (or --profile) with published template GPU counts, context limit, and pricing metadata"
+                )
         catalogs = [
             profile_catalog(foundry_profile, model_id)
             if provider == "foundry"
             else load_instance_data(provider)
             for provider in selected
+            if provider not in excluded
         ]
         if not json_output:
             console.print(
@@ -350,6 +386,13 @@ def estimate(
             }
             for match in selection.matches
         ]
+        for row in rows:
+            publication = checks.get(row["provider"])
+            if publication and publication.model:
+                row["modelAssetId"] = publication.model.asset_id
+                row["catalogVersion"] = publication.model.version
+                if publication.template:
+                    row["deploymentTemplateId"] = publication.template["deployment_template"]
         priced = [row for row in rows if row["pricePerHourUsd"] is not None]
         cheapest = min(priced, key=lambda row: row["pricePerHourUsd"]) if priced else None
         most_expensive = max(priced, key=lambda row: row["pricePerHourUsd"]) if priced else None
@@ -371,7 +414,9 @@ def estimate(
             "sort": sort.value,
             "safetyMargin": safety_margin,
             "pricing": {
-                "source": "catalogs-and-profiles" if "foundry" in selected else "bundled-catalogs",
+                "source": "catalogs-and-profiles"
+                if any(catalog.provider == "foundry" for catalog in catalogs)
+                else "bundled-catalogs",
                 "currency": "USD",
                 "unit": "hour",
                 "catalogs": {
@@ -391,24 +436,33 @@ def estimate(
             "instances": rows[:limit],
             **diagnostics,
         }
-        if "azureml" in selected:
-            output["deploymentChecks"] = {
-                "azureml": {"catalogAvailability": "not-checked", "runtimeSettings": "publisher-defined"}
-            }
-        if not rows:
+        if checks:
+            output["catalogAvailability"] = {provider: result.to_dict() for provider, result in checks.items()}
+        if excluded:
+            output["excludedProviders"] = excluded
+        if not catalogs and excluded:
+            output["error"] = "; ".join(f"{provider}: {reason}" for provider, reason in excluded.items())
+        elif not rows:
             output["error"] = "No compatible instances found"
         elif not priced:
             output["error"] = "No catalog prices available for compatible instances"
         if json_output:
             typer.echo(json.dumps(output, indent=2))
         else:
+            print_catalog_availability(checks, console)
+            for provider, reason in excluded.items():
+                console.print(Text(f"{provider} excluded from estimates: {reason}", style="yellow"))
             _print_workload(console, diagnostics, options, safety_margin)
             if rows:
                 _print_cheapest(cheapest)
                 _print_comparison(output["instances"], len(rows), sort)
             else:
                 console.print("No compatible instances found.", style="yellow")
-            basis = "catalog and supplied profile" if "foundry" in selected else "bundled catalog"
+            basis = (
+                "catalog and supplied profile"
+                if any(catalog.provider == "foundry" for catalog in catalogs)
+                else "bundled catalog"
+            )
             console.print(f"\nPricing: {basis} estimates in USD/hour; not live quotes.", style="dim")
             for catalog in catalogs:
                 console.print(
@@ -420,7 +474,7 @@ def estimate(
                     console.print(Text(f"  Price source: {catalog.pricing_source}", style="dim"))
             if "azureml" in selected:
                 console.print(
-                    "Azure ML: hardware memory fit only; published model availability and runtime settings are checked by azureml catalog/deploy.",
+                    "Microsoft catalog publication is checked before ranking. Runtime settings, SKU compatibility, regional capacity and quota still require deployment validation.",
                     style="dim",
                 )
             if output["unpricedCount"]:

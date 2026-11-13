@@ -145,12 +145,25 @@ endpoints, including those using the removed custom runtime.
 
 ## Estimates and verification
 
-`hf-cloud estimate MODEL_ID --provider azureml` remains an offline catalog of
-hardware memory fits and bundled USD/VM-hour prices. It does not verify model
-publication, workload settings, quota or regional capacity. The output states
-this distinction and deploy hints only select hardware. Foundry requires a
-compatible published template and separate managed-compute pricing; VM prices
-cannot be used as Foundry prices.
+`hf-cloud catalog MODEL_ID` checks Azure ML and current Foundry side by side and
+links to their published model pages. Discovery requires Azure login but no
+workspace configuration. `--provider azureml` or `--provider foundry` narrows it;
+`--json` provides machine-readable results. Failed/incomplete checks exit nonzero.
+
+`hf-cloud estimate MODEL_ID --provider azureml` verifies publication before any
+Azure ML row can be ranked or recommended. It excludes missing models, unknown
+checks (authentication/network/service errors), and weight selections that catalog
+deployments cannot follow, such as local files and Hub revisions. Other providers
+can still produce estimates. Root estimates report Foundry availability too; a
+verified template profile is required to include Foundry prices.
+
+Checks run concurrently with a 15-second total deadline and do not persist negative
+results between commands. Estimates expose `catalogAvailability` and
+`excludedProviders` in JSON. Azure ML deploy hints include the verified
+`--catalog-version`. Publication does not prove that the model's packaged runtime
+matches the estimated workload, nor does it establish SKU compatibility, project
+quota or regional capacity. Those still need deployment validation. Foundry uses
+separate template pricing; Azure VM prices cannot be used as Foundry prices.
 
 The Azure VM snapshot is `eastus`, Linux Consumption, observed 2026-11-12 through
 the [Retail Prices API](https://learn.microsoft.com/en-us/rest/api/cost-management/retail-prices/azure-retail-prices).
