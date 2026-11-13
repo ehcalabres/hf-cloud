@@ -305,8 +305,8 @@ deployment's price with [AWS pricing](https://aws.amazon.com/sagemaker/ai/pricin
 Cloud capacity and quotas are not checked. Foundry template layouts and context
 limits are discovered from the published catalog automatically; per-accelerator
 rates are multiplied by the template's GPU count. The bundled Global Managed
-Compute USD rates are a 2026-11-13 snapshot of Microsoft's pricing page, supplied
-by the user because the automated page reader returned placeholders, not live quotes.
+Compute USD rates are an independently verified 2026-11-13 snapshot of Microsoft's
+pricing page, not live quotes.
 Families without known rates remain unpriced. Templates without readable context
 limits or GPU layouts are skipped with details under `--verbose`.
 Use `--foundry-profile PROFILE.json` as an optional override for a verified rate

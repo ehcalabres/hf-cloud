@@ -159,10 +159,16 @@ count in the selected template. HF Cloud bundles a shared USD rate table for
 `GlobalManagedCompute`: A100 80 GB $3.95, H100 80 GB $7.91, H200 141 GB $9.10 and
 MI300X 192 GB $7.91 per accelerator-hour. These are a 2026-11-13 snapshot of
 [Microsoft's public pricing table](https://azure.microsoft.com/en-us/pricing/details/ai-foundry-models/microsoft/),
-supplied by the user because the automated page reader returned placeholders.
+independently verified against the pricing data embedded in the page HTML.
 They are bundled estimates, not live quotes. A price entry
 does not establish model/hardware availability: only published templates are
 considered. Families without a known rate remain unpriced and cannot win cheapest.
+
+To verify the public rate yourself, select USD on that pricing page and find
+**Managed Compute → Managed H200 Global**. The numeric values are also present in
+the table cells' `data-amount` attributes in the page source, even when a text-only
+reader shows `$-`. For your agreement-specific price, use the signed-in Azure
+pricing calculator or request a Microsoft quote.
 
 Foundry prices cannot be inferred from Azure ML VM prices, even for the same GPU
 family: they are separate services and billing units. Automatic deployment hints
