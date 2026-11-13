@@ -156,12 +156,13 @@ discovery fails or exceeds the shared 15-second catalog deadline.
 
 Foundry managed compute is billed per accelerator-hour, using the accelerator
 count in the selected template. HF Cloud bundles a shared USD rate table for
-`GlobalManagedCompute`: A100 80 GB $3.95, H100 80 GB $7.91 and MI300X 192 GB $7.91
-per accelerator-hour. These are Microsoft's [published 2026-06-03 launch rates](https://devblogs.microsoft.com/foundry/announcing-foundry-managed-compute/),
-checked against the source on 2026-11-13, not current live quotes. A price entry
+`GlobalManagedCompute`: A100 80 GB $3.95, H100 80 GB $7.91, H200 141 GB $9.10 and
+MI300X 192 GB $7.91 per accelerator-hour. These are a 2026-11-13 snapshot of
+[Microsoft's public pricing table](https://azure.microsoft.com/en-us/pricing/details/ai-foundry-models/microsoft/),
+supplied by the user because the automated page reader returned placeholders.
+They are bundled estimates, not live quotes. A price entry
 does not establish model/hardware availability: only published templates are
-considered. H200 templates can be assessed for memory fit but remain unpriced
-until a sourced rate is added. Unknown rates cannot win cheapest.
+considered. Families without a known rate remain unpriced and cannot win cheapest.
 
 Foundry prices cannot be inferred from Azure ML VM prices, even for the same GPU
 family: they are separate services and billing units. Automatic deployment hints

@@ -2,12 +2,13 @@
   "scope": "GlobalManagedCompute",
   "currency": "USD",
   "unit": "accelerator-hour",
-  "last_updated": "2026-06-03",
-  "pricingSource": "https://devblogs.microsoft.com/foundry/announcing-foundry-managed-compute/",
-  "pricingBasis": "Published Global Managed Compute launch rates, not live quotes. Checked 2026-11-13. Excludes discounts, storage, networking and other charges. MI300X was announced as coming soon; a rate alone does not establish availability.",
+  "last_updated": "2026-11-13",
+  "pricingSource": "https://azure.microsoft.com/en-us/pricing/details/ai-foundry-models/microsoft/",
+  "pricingBasis": "Global Managed Compute public USD rates shown on Microsoft's pricing page, supplied by the user on 2026-11-13; the automated page reader returned price placeholders. Bundled estimates, not live quotes. Excludes discounts, storage, networking and other charges. A rate alone does not establish model/hardware availability.",
   "rates": {
     "A100_80GB": 3.95,
     "H100_80GB": 7.91,
+    "H200_141GB": 9.10,
     "MI300_192GB": 7.91
   }
 }

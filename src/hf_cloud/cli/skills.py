@@ -117,7 +117,8 @@ reasons shown; other providers can still be estimated. Checks run concurrently
 with a 15-second deadline, with no persistent negative cache. Foundry automatically
 discovers published template GPU layouts and machine-readable context caps, then
 multiplies the GPU count by bundled Global per-accelerator rates. Rates are sourced
-2026-06-03 launch prices, not live quotes. Unknown rates remain unpriced; unknown
+2026-11-13 public USD pricing-page estimates (including H200 at $9.10/GPU-hour),
+not live quotes. Unknown rates remain unpriced; unknown
 GPU/context layouts are skipped. Profiles are optional template/pricing overrides
 and must match a published model version and active allowed template/GPU layout. Azure ML
 hints pin the verified catalog version. Catalog availability is separate from

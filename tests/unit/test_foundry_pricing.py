@@ -74,10 +74,11 @@ def test_published_layouts_join_shared_accelerator_rates_and_deduplicate_labels(
     assert rows["A100_80GB"]["pricePerHourUsd"] == 3.95
     assert rows["H100_80GB"]["pricePerHourUsd"] == 15.82
     assert rows["H100_80GB"]["numGpu"] == 2
-    assert rows["H200_141GB"]["pricePerHourUsd"] is None
+    assert rows["H200_141GB"]["pricePerHourUsd"] == 9.10
     assert all("/versions/3" in row["deploymentTemplateId"] for row in result.instances)
     assert result.pricing_region == "GlobalManagedCompute"
-    assert result.last_updated == "2026-06-03"
+    assert result.last_updated == "2026-11-13"
+    assert result.pricing_source == "https://azure.microsoft.com/en-us/pricing/details/ai-foundry-models/microsoft/"
     assert len(warnings) == 1 and "no machine-readable context limit" in warnings[0]
 
 
@@ -133,7 +134,9 @@ def test_profile_free_estimate_ranks_foundry_in_global_table_and_uses_one_memory
     assert len(foundry) == 3
     assert foundry[0]["pricePerHourUsd"] == 3.95
     assert foundry[0]["estimatedCostUsd"] == 189.6
-    assert foundry[-1]["estimatedCostUsd"] is None
+    h200 = next(row for row in foundry if row["acceleratorType"] == "H200_141GB")
+    assert h200["pricePerHourUsd"] == 9.10
+    assert h200["estimatedCostUsd"] == 436.8
     assert data["instances"][-1]["pricePerHourUsd"] is None
     assert data["catalogAvailability"]["foundry"]["estimateCandidateCount"] == 3
     assert data["pricing"]["source"] == "bundled-catalogs"
@@ -174,5 +177,5 @@ def test_context_cap_still_excludes_incompatible_published_template(comparison, 
     result = CliRunner().invoke(app, ["foundry", "estimate", "org/model", "--json"])
     assert result.exit_code == 0, result.stdout
     data = json.loads(result.stdout)
-    assert data["cheapest"]["acceleratorType"] == "H100_80GB"
+    assert data["cheapest"]["acceleratorType"] == "H200_141GB"
     assert any("supports at most 512" in warning for warning in data["warnings"])
