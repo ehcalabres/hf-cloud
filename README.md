@@ -302,6 +302,18 @@ storage, network, and other charges are outside this comparison. Verify a
 deployment's price with [AWS pricing](https://aws.amazon.com/sagemaker/ai/pricing/),
 [Google Cloud pricing](https://cloud.google.com/vertex-ai/pricing), or
 [Azure pricing](https://azure.microsoft.com/en-us/pricing/details/machine-learning/).
+
+The Vertex AI snapshot was checked on **2026-11-17** for **Iowa (`us-central1`)**,
+using the public USD on-demand **Prediction and explanation** tables.
+Rates cover one full node, including
+its CPUs, host RAM and all GPUs; do not multiply them by GPU count again. G2, A2,
+A3 Mega and A3 Ultra use published node-hour rates. A3 High estimates sum Google's
+published A3 prediction CPU/RAM/H100 component rates and the
+[documented machine specifications](https://cloud.google.com/vertex-ai/docs/predictions/configure-compute);
+the inputs are recorded in each entry's `pricingCalculation` in the catalog.
+These rates exclude storage, networking, Spot/reservation pricing and commitment
+discounts. Other regions can differ; this snapshot does not check regional capacity.
+
 Cloud capacity and quotas are not checked. Foundry template layouts and context
 limits are discovered from the published catalog automatically; per-accelerator
 rates are multiplied by the template's GPU count. The bundled Global Managed

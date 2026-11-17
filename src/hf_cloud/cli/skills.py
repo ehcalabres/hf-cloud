@@ -127,6 +127,10 @@ Azure VM prices for Foundry managed compute.
 
 Cost projections use `--hours` and `--instance-count`, assuming constant replicas.
 Rates already include every GPU in an instance; do not multiply GPU count twice.
+Vertex prices are the 2026-11-17 us-central1 public USD on-demand online-prediction
+snapshot. G2/A2/A3 Mega/A3 Ultra use published node rates; A3 High uses the sum of
+published prediction CPU/RAM/H100 rates and documented machine specifications.
+These are full-node estimates, excluding storage/network, Spot and discounts.
 Foundry profiles accept either a sourced `pricePerAcceleratorHourUsd` (converted
 using the template GPU count) or `pricePerInstanceHourUsd`, not both. These are
 compute estimates, excluding storage/network/other charges, and `--hours` does not
