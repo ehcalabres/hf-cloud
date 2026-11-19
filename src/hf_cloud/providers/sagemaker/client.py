@@ -1,5 +1,6 @@
 """AWS SageMaker client wrapper."""
 
+import os
 import re
 from typing import Any, Optional
 
@@ -137,11 +138,15 @@ class SageMakerClient:
 
     def get_execution_role(self, role_name: Optional[str] = None) -> str:
         """Resolve and inspect an explicit, configured, or SDK-discovered execution role."""
+        role_name = role_name or os.environ.get("SAGEMAKER_ROLE_ARN")
         if role_name is None:
             try:
                 from sagemaker.core.helper.session_helper import get_execution_role
 
-                role_name = get_execution_role(sagemaker_session=self.get_sagemaker_session())
+                try:
+                    role_name = get_execution_role(sagemaker_session=self.get_sagemaker_session())
+                except ValueError:
+                    role_name = "sagemaker_execution_role"
             except Exception as error:
                 raise ProviderError(
                     "sagemaker",

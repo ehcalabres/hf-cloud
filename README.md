@@ -89,6 +89,17 @@ SDK explicitly, use `uv lock --upgrade-package sagemaker` followed by `uv sync`.
 SageMaker uses its SDK's `ModelBuilder` to build the serving image. Vertex AI uses
 the serving image configured in HF Cloud. SDK updates do not update running endpoints.
 
+For SageMaker text generation, deployment and `--print-code` follow the Hub's
+`ModelBuilder` recipe: explicit `ModelServer.VLLM`, `SM_VLLM_MODEL`,
+`SM_VLLM_TENSOR_PARALLEL_SIZE`, task metadata, and an OpenAI completions schema
+(`model`, `prompt`, `max_tokens`). The SDK selects the AWS serving image; HF Cloud
+does not build a custom image. Tensor parallelism uses the bundled instance GPU
+count, or 1 for unlisted instances; override it with `--tensor-parallel-size`.
+Startup allowance uses the bundled instance timeout (900–3600 seconds), or 900
+seconds for unlisted instances. Instance count controls replicas, independently
+of GPUs per replica. Other tasks retain SDK server selection and task schemas.
+Printed code includes a sample `predictor.invoke` call after checking readiness.
+
 During `sagemaker deploy`, `vertex deploy` and `azureml deploy`, HF Cloud checks
 for newer stable, non-yanked SDK releases on PyPI in the background and prints an informational notice
 when the command finishes. SageMaker checks `sagemaker` and `boto3`; Vertex checks
@@ -241,10 +252,22 @@ Conditions needing deployment context are reported and deferred to AWS. This
 preflight checks trust; AWS still evaluates `iam:PassRole`, organization policies,
 and runtime permissions during deployment. See [SageMaker execution roles](https://docs.aws.amazon.com/sagemaker/latest/dg/sagemaker-roles.html).
 
+Without an explicit or configured role, HF Cloud reads `SAGEMAKER_ROLE_ARN`, then
+tries the SDK's `get_execution_role()`. If SDK discovery raises `ValueError`, it
+looks up `sagemaker_execution_role`, matching the Hub example. All resolved roles
+go through the same trust preflight.
+
 SageMaker deployment waits for the endpoint and verifies its AWS status. Only an
 `InService` endpoint is reported and saved as `running`. Failed endpoints produce
 a nonzero exit code and show AWS's `FailureReason`, when available. A failure to
 verify status is also an error; resources are retained for inspection.
+
+`sagemaker invoke ENDPOINT --input "Hello"` uses the vLLM format for saved vLLM
+deployments, or detects it from the endpoint model's `SM_VLLM_MODEL` environment
+variable when serving metadata is missing. Pass `--api vllm` to skip discovery
+for endpoints deployed from a snippet or outside HF Cloud.
+`--api huggingface` selects the older `inputs`/`parameters` format; it is also the
+fallback when serving metadata cannot be determined.
 
 ### 3. Check deployment status
 

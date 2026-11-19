@@ -1,7 +1,7 @@
 """Regression coverage for SDK returns that hide a failed SageMaker endpoint."""
 
 import sys
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
@@ -20,7 +20,8 @@ def deployment_flow(monkeypatch):
     # The affected SDK logged a failure but returned an endpoint object anyway.
     builder.deploy.return_value = Mock()
     factory = Mock(return_value=builder)
-    module = ModuleType("sagemaker.serve.model_builder")
+    module = ModuleType("sagemaker.serve")
+    module.ModelServer = SimpleNamespace(VLLM="vllm-server")
     module.ModelBuilder = factory
     monkeypatch.setitem(sys.modules, module.__name__, module)
     provider = SageMakerProvider(region="us-east-1")
@@ -60,7 +61,13 @@ def test_sdk_return_without_inservice_never_reports_success(deployment_flow, sta
     assert (status or "Unknown") in result.stdout
     assert_no_deployment_success(result.stdout)
     state.add_deployment.assert_not_called()
-    builder.deploy.assert_called_once_with(endpoint_name="test-endpoint", initial_instance_count=1, wait=True)
+    builder.deploy.assert_called_once_with(
+        endpoint_name="test-endpoint",
+        initial_instance_count=1,
+        instance_type="ml.g5.xlarge",
+        container_timeout_in_seconds=900,
+        wait=True,
+    )
     provider.client.sagemaker.describe_endpoint.assert_called_once_with(EndpointName="test-endpoint")
 
 
@@ -92,7 +99,13 @@ def test_inservice_is_saved_and_reported_running(deployment_flow):
     assert "Status: running" in result.stdout
     assert "5-10 minutes" not in result.stdout
     assert state.add_deployment.call_args.args[0].status == DeploymentStatus.RUNNING
-    builder.deploy.assert_called_once_with(endpoint_name="test-endpoint", initial_instance_count=1, wait=True)
+    builder.deploy.assert_called_once_with(
+        endpoint_name="test-endpoint",
+        initial_instance_count=1,
+        instance_type="ml.g5.xlarge",
+        container_timeout_in_seconds=900,
+        wait=True,
+    )
 
 
 def test_explicit_arn_overrides_configured_role(deployment_flow):
@@ -194,3 +207,114 @@ def test_provider_preserves_failure_details(deployment_flow):
     with pytest.raises(DeploymentError, match="Insufficient capacity") as error:
         provider.deploy("org/model", "test-endpoint", {"instance_type": "ml.g6.2xlarge"})
     assert error.value.deployment_id == "test-endpoint"
+
+
+@pytest.mark.parametrize("parallel_size", [None, 4])
+def test_vllm_recipe_uses_instance_gpus_per_replica(deployment_flow, parallel_size):
+    provider, builder, factory, _ = deployment_flow
+    deployment = provider.deploy(
+        "org/model",
+        "test-endpoint",
+        {
+            "instance_type": "ml.p5.48xlarge",
+            "instance_count": 2,
+            "tensor_parallel_size": parallel_size,
+        },
+    )
+    args = factory.call_args.kwargs
+    assert args["model_server"] == "vllm-server"
+    assert args["model_metadata"] == {"HF_TASK": "text-generation"}
+    assert args["env_vars"] == {
+        "SM_VLLM_MODEL": "org/model",
+        "HF_TASK": "text-generation",
+        "SM_VLLM_TENSOR_PARALLEL_SIZE": str(parallel_size or 8),
+    }
+    builder.deploy.assert_called_once_with(
+        endpoint_name="test-endpoint",
+        initial_instance_count=2,
+        instance_type="ml.p5.48xlarge",
+        container_timeout_in_seconds=3600,
+        wait=True,
+    )
+    assert deployment.config["model_server"] == "vllm"
+    assert deployment.config["tensor_parallel_size"] == (parallel_size or 8)
+
+
+def test_non_generation_keeps_task_specific_serving(deployment_flow):
+    provider, _, factory, _ = deployment_flow
+    deployer.get_model_task.return_value = "question-answering"
+    provider.deploy("org/model", "test-endpoint", {"instance_type": "ml.g6.2xlarge"})
+    args = factory.call_args.kwargs
+    assert "model_server" not in args
+    assert args["env_vars"] == {"HF_MODEL_ID": "org/model", "HF_TASK": "question-answering"}
+
+
+@pytest.mark.parametrize("size", [0, 2])
+def test_invalid_parallel_size_fails_before_provider_work(deployment_flow, size):
+    provider, builder, _, _ = deployment_flow
+    result = deploy_command("--instance-type", "ml.g6.2xlarge", "--tensor-parallel-size", str(size))
+    assert result.exit_code == 2, result.stdout
+    provider.client.get_execution_role.assert_not_called()
+    builder.build.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "saved_server,api,expected",
+    [
+        ("vllm", "auto", {"model": "org/model", "prompt": "Hello", "max_tokens": 7}),
+        (None, "vllm", {"prompt": "Hello", "max_tokens": 7}),
+        ("vllm", "huggingface", {"inputs": "Hello", "parameters": {"max_new_tokens": 7}}),
+        (None, "auto", {"inputs": "Hello", "parameters": {"max_new_tokens": 7}}),
+    ],
+)
+def test_invoke_matches_saved_serving_protocol(deployment_flow, saved_server, api, expected):
+    provider, _, _, state = deployment_flow
+    provider.get_deployment = Mock(return_value=Mock(to_dict=lambda: {}))
+    provider.invoke = Mock(return_value={"choices": [{"text": "Hi"}]})
+    state.get_deployment.return_value = (
+        {"model_id": "org/model", "config": {"model_server": saved_server}} if saved_server else None
+    )
+    result = CliRunner().invoke(
+        app,
+        [
+            "sagemaker",
+            "invoke",
+            "test-endpoint",
+            "--input",
+            "Hello",
+            "--max-tokens",
+            "7",
+            "--api",
+            api,
+        ],
+    )
+    assert result.exit_code == 0, result.stdout
+    provider.invoke.assert_called_once_with("test-endpoint", expected)
+
+
+def test_vllm_environment_is_discovered_for_external_or_refreshed_endpoints(deployment_flow):
+    provider, _, _, state = deployment_flow
+    provider.client.sagemaker.describe_endpoint.return_value = {
+        "EndpointName": "test-endpoint",
+        "EndpointStatus": "InService",
+        "EndpointConfigName": "config",
+    }
+    provider.client.sagemaker.describe_endpoint_config.return_value = {
+        "ProductionVariants": [
+            {"ModelName": "model", "InstanceType": "ml.g6.2xlarge", "InitialInstanceCount": 1}
+        ],
+    }
+    provider.client.sagemaker.describe_model.return_value = {
+        "PrimaryContainer": {"Environment": {"SM_VLLM_MODEL": "org/model", "HF_TOKEN": "secret"}},
+    }
+    deployment = provider.get_deployment("test-endpoint")
+    assert deployment.model_id == "org/model"
+    assert deployment.config["model_server"] == "vllm"
+    assert "secret" not in str(deployment.to_dict())
+    state.get_deployment.return_value = None
+    provider.invoke = Mock(return_value={})
+    result = CliRunner().invoke(app, ["sagemaker", "invoke", "test-endpoint", "--input", "Hello"])
+    assert result.exit_code == 0, result.stdout
+    provider.invoke.assert_called_once_with(
+        "test-endpoint", {"model": "org/model", "prompt": "Hello", "max_tokens": 100}
+    )

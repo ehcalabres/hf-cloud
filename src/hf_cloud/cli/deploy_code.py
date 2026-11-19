@@ -3,7 +3,12 @@
 from pprint import pformat
 from typing import Any, Optional
 
-from hf_cloud.providers.sagemaker.utils import get_schema_samples, sanitize_endpoint_name
+from hf_cloud.providers.sagemaker.utils import (
+    get_sagemaker_env_vars,
+    get_schema_samples,
+    get_serving_settings,
+    sanitize_endpoint_name,
+)
 from hf_cloud.providers.vertex.utils import get_serving_container_uri
 from hf_cloud.providers.vertex.utils import sanitize_endpoint_name as vertex_endpoint_name
 
@@ -13,27 +18,44 @@ def _literal(value: Any) -> str:
 
 
 def sagemaker_code(
-    model_id: str, name: str, instance_type: str, count: int, region: str, role: Optional[str], task: str
+    model_id: str,
+    name: str,
+    instance_type: str,
+    count: int,
+    region: str,
+    role: Optional[str],
+    task: str,
+    tensor_parallel_size: Optional[int] = None,
 ) -> str:
-    samples = get_schema_samples(task)
+    samples = get_schema_samples(task, model_id)
+    settings = get_serving_settings(instance_type, tensor_parallel_size)
+    env = get_sagemaker_env_vars(model_id, task=task, tensor_parallel_size=settings["tensor_parallel_size"])
+    server = "    model_server=ModelServer.VLLM,\n" if task == "text-generation" else ""
     return f"""# Requires: sagemaker>=3.29.0, boto3, huggingface-hub
 # Running this script creates billable cloud resources.
+import json
 import os
 import boto3
 from huggingface_hub import get_token
 from sagemaker.core.helper.session_helper import Session, get_execution_role
-from sagemaker.serve.model_builder import ModelBuilder, SchemaBuilder
+from sagemaker.serve import ModelBuilder, ModelServer
+from sagemaker.serve.builder.schema_builder import SchemaBuilder
 
 session = boto3.Session(region_name={region!r})
 sagemaker_session = Session(boto_session=session)
 role = {role!r}
 if role is None:
-    role = get_execution_role(sagemaker_session=sagemaker_session)
-elif not role.startswith("arn:"):
+    role = os.environ.get("SAGEMAKER_ROLE_ARN") or None
+if role is None:
+    try:
+        role = get_execution_role(sagemaker_session=sagemaker_session)
+    except ValueError:
+        role = "sagemaker_execution_role"
+if not role.startswith("arn:"):
     role = session.client("iam").get_role(RoleName=role)["Role"]["Arn"]
 # The execution role must trust sagemaker.amazonaws.com and allow model access.
 token = os.environ.get("HF_TOKEN") or get_token()
-env = {{"HF_MODEL_ID": {model_id!r}, "HF_TASK": {task!r}}}
+env = {_literal(env)}
 if token:
     env["HF_TOKEN"] = token
 
@@ -41,13 +63,25 @@ schema = SchemaBuilder(**{_literal(samples)})
 builder = ModelBuilder(
     model={model_id!r}, role_arn=role, sagemaker_session=sagemaker_session,
     instance_type={instance_type!r}, schema_builder=schema, env_vars=env,
-)
+    model_metadata={{"HF_TASK": env["HF_TASK"]}},
+{server})
 builder.build()
-builder.deploy(endpoint_name={sanitize_endpoint_name(name)!r}, initial_instance_count={count!r}, wait=True)
+predictor = builder.deploy(
+    endpoint_name={sanitize_endpoint_name(name)!r}, initial_instance_count={count!r},
+    instance_type={instance_type!r}, container_timeout_in_seconds={settings["container_timeout_in_seconds"]!r},
+    wait=True,
+)
 endpoint = session.client("sagemaker").describe_endpoint(EndpointName={sanitize_endpoint_name(name)!r})
 if endpoint["EndpointStatus"] != "InService":
     raise RuntimeError(endpoint.get("FailureReason") or endpoint["EndpointStatus"])
 print(endpoint["EndpointArn"])
+
+# Send a sample request once the endpoint is ready.
+res = predictor.invoke(
+    body=json.dumps({_literal(samples["sample_input"])}),
+    content_type="application/json",
+)
+print(json.loads(res.body.read()))
 """
 
 

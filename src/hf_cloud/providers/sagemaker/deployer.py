@@ -12,6 +12,7 @@ from hf_cloud.providers.sagemaker.utils import (
     get_sagemaker_endpoint_name,
     get_sagemaker_env_vars,
     get_schema_builder_from_model,
+    get_serving_settings,
     sanitize_endpoint_name,
 )
 from hf_cloud.utils.hf_hub import get_model_task
@@ -73,11 +74,12 @@ class SageMakerDeployer:
         )
 
         try:
+            settings = get_serving_settings(instance_type, config.get("tensor_parallel_size"))
             # Resolve role and validate trust before SDK initialization or model work.
             role_arn = self.client.get_execution_role(role_name=role)
 
             # Import ModelBuilder here to avoid import errors when SDK not installed
-            from sagemaker.serve.model_builder import ModelBuilder
+            from sagemaker.serve import ModelBuilder, ModelServer
 
             # Get SageMaker session and role
             session = self.client.get_sagemaker_session()
@@ -85,6 +87,7 @@ class SageMakerDeployer:
             # Get model task and schema builder
             task = get_model_task(model_id=model_id, token=token)
             schema_builder = get_schema_builder_from_model(model_id=model_id, task=task)
+            server_kwargs = {"model_server": ModelServer.VLLM} if task == "text-generation" else {}
 
             console.print(
                 f"[green]Deploying model '{model_id}' to SageMaker endpoint '{endpoint_name}' in region '{region}'[/green]"
@@ -101,7 +104,14 @@ class SageMakerDeployer:
                 sagemaker_session=session,
                 instance_type=instance_type,
                 schema_builder=schema_builder,
-                env_vars=get_sagemaker_env_vars(model_id=model_id, token=token, task=task),
+                env_vars=get_sagemaker_env_vars(
+                    model_id=model_id,
+                    token=token,
+                    task=task,
+                    tensor_parallel_size=settings["tensor_parallel_size"],
+                ),
+                model_metadata={"HF_TASK": task},
+                **server_kwargs,
             )
 
             # Build the model
@@ -115,6 +125,8 @@ class SageMakerDeployer:
             model_builder.deploy(
                 endpoint_name=endpoint_name,
                 initial_instance_count=instance_count,
+                instance_type=instance_type,
+                container_timeout_in_seconds=settings["container_timeout_in_seconds"],
                 wait=True,
             )
 
@@ -145,7 +157,12 @@ class SageMakerDeployer:
                 provider="sagemaker",
                 model_id=model_id,
                 status=DeploymentStatus.RUNNING,
-                config=config,
+                config={
+                    **config,
+                    **settings,
+                    "task": task,
+                    "model_server": "vllm" if task == "text-generation" else "auto",
+                },
                 endpoint_url=f"https://runtime.sagemaker.{region}.amazonaws.com/endpoints/{endpoint_name}/invocations",
                 region=region,
                 instance_type=instance_type,

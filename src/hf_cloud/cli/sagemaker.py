@@ -15,7 +15,7 @@ from hf_cloud.core.exceptions import DeploymentError, DeploymentNotFoundError, P
 from hf_cloud.core.state import StateManager
 from hf_cloud.providers.sagemaker import SageMakerProvider
 from hf_cloud.providers.sagemaker.client import SageMakerClient
-from hf_cloud.providers.sagemaker.utils import _decode_ansi_logs
+from hf_cloud.providers.sagemaker.utils import _decode_ansi_logs, get_serving_settings
 from hf_cloud.utils.hf_hub import get_model_task
 from hf_cloud.utils.sdk_versions import SdkUpdateCheck
 
@@ -57,6 +57,14 @@ def deploy(
         Optional[str], typer.Option("--token", "-t", help="HuggingFace Hub token for private models")
     ] = None,
     instance_count: Annotated[int, typer.Option("--instance-count", "-c", help="Number of instances")] = 1,
+    tensor_parallel_size: Annotated[
+        Optional[int],
+        typer.Option(
+            "--tensor-parallel-size",
+            min=1,
+            help="vLLM GPUs per replica (defaults to the bundled instance GPU count, otherwise 1)",
+        ),
+    ] = None,
     print_code: Annotated[
         bool, typer.Option("--print-code", help="Print standalone Python SDK code without deploying")
     ] = False,
@@ -75,13 +83,26 @@ def deploy(
     effective_role = role_name if role_name is not None else role if role is not None else defaults.get("role")
     effective_instance_type = instance_type or defaults.get("instance_type") or "ml.g5.xlarge"
 
+    if instance_count < 1:
+        raise typer.BadParameter("Instance count must be positive", param_hint="--instance-count")
+    try:
+        get_serving_settings(effective_instance_type, tensor_parallel_size)
+    except ValueError as error:
+        raise typer.BadParameter(str(error), param_hint="--tensor-parallel-size") from error
+
     if print_code:
-        if instance_count < 1:
-            raise typer.BadParameter("Instance count must be positive", param_hint="--instance-count")
-        typer.echo(sagemaker_code(
-            model_id, deployment_name, effective_instance_type, instance_count,
-            SageMakerClient.resolve_region(region), effective_role, get_model_task(model_id, token),
-        ))
+        typer.echo(
+            sagemaker_code(
+                model_id,
+                deployment_name,
+                effective_instance_type,
+                instance_count,
+                SageMakerClient.resolve_region(region),
+                effective_role,
+                get_model_task(model_id, token),
+                tensor_parallel_size,
+            )
+        )
         return
 
     console.print(f"[bold blue]Deploying {model_id} to AWS SageMaker...[/bold blue]")
@@ -95,6 +116,7 @@ def deploy(
             "region": provider.client.region,
             "role": effective_role,
             "instance_count": instance_count,
+            "tensor_parallel_size": tensor_parallel_size,
         }
 
         deployment = provider.deploy(
@@ -319,17 +341,42 @@ def invoke(
     input_text: Annotated[str, typer.Option("--input", "-i", help="Input text for inference")],
     max_new_tokens: Annotated[int, typer.Option("--max-tokens", help="Maximum tokens to generate")] = 100,
     region: Annotated[Optional[str], typer.Option("--region", "-r", help="AWS region")] = None,
+    api: Annotated[
+        str, typer.Option("--api", help="Request format: auto (use saved deployment), vllm, or huggingface")
+    ] = "auto",
 ) -> None:
     """Test inference on the deployment."""
+    if api not in ("auto", "vllm", "huggingface"):
+        raise typer.BadParameter("Choose auto, vllm, or huggingface", param_hint="--api")
     try:
         provider = SageMakerProvider(region=region)
+        saved = (
+            StateManager().get_deployment(
+                deployment_id,
+                provider="sagemaker",
+                region=provider.client.region,
+            )
+            or {}
+        )
+        if api == "auto" and not saved.get("config", {}).get("model_server"):
+            try:
+                saved = provider.get_deployment(deployment_id).to_dict()
+            except ProviderError:
+                pass  # An explicit --api still works without describe permissions.
+        use_vllm = api == "vllm" or (api == "auto" and saved.get("config", {}).get("model_server") == "vllm")
 
-        payload = {
-            "inputs": input_text,
-            "parameters": {
-                "max_new_tokens": max_new_tokens,
-            },
-        }
+        payload = (
+            {"prompt": input_text, "max_tokens": max_new_tokens}
+            if use_vllm
+            else {
+                "inputs": input_text,
+                "parameters": {
+                    "max_new_tokens": max_new_tokens,
+                },
+            }
+        )
+        if use_vllm and saved.get("model_id") not in (None, "unknown"):
+            payload["model"] = saved["model_id"]
 
         console.print(f"[dim]Invoking endpoint {deployment_id}...[/dim]")
         result = provider.invoke(deployment_id, payload)

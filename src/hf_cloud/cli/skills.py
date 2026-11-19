@@ -64,6 +64,9 @@ Standalone fallback:
    - `hf cloud foundry estimate MODEL_ID --profile PROFILE.json` (optional override)
 3. Deploy a model:
    - `hf cloud sagemaker deploy MODEL_ID --name NAME`
+   - SageMaker text generation uses the Hub's ModelBuilder/VLLM recipe. GPUs per
+     replica default to the bundled instance GPU count (otherwise 1); override
+     with `--tensor-parallel-size N`. `--instance-count` controls replicas.
    - `hf cloud vertex deploy MODEL_ID --name NAME`
    - Add `--print-code` to any provider's deploy command to emit standalone Python
      SDK code without deploying, e.g. `hf cloud sagemaker deploy MODEL_ID --name NAME --print-code > deploy.py`.
@@ -78,6 +81,8 @@ Standalone fallback:
    - `hf cloud azureml invoke DEPLOYMENT_ID --input "Hello"`
    - `hf cloud foundry status DEPLOYMENT_ID`
    - `hf cloud sagemaker invoke DEPLOYMENT_ID --input "Hello"`
+   - SageMaker invoke detects vLLM from saved state or endpoint model environment.
+     Use `--api vllm` or `--api huggingface` to select the request format explicitly.
 5. Clean up:
    - `hf cloud sagemaker delete DEPLOYMENT_ID`
    - `hf cloud vertex delete DEPLOYMENT_ID`

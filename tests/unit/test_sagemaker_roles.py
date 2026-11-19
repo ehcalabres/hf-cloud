@@ -30,7 +30,8 @@ def role(*statements):
 
 
 @pytest.fixture
-def client():
+def client(monkeypatch):
+    monkeypatch.delenv("SAGEMAKER_ROLE_ARN", raising=False)
     client = SageMakerClient(region="us-east-1")
     client._iam_client = Mock()
     client.iam.get_role.return_value = {"Role": role()}
@@ -55,6 +56,25 @@ def test_auto_discovered_roles_are_also_validated(client, monkeypatch):
     }
     with pytest.raises(ProviderError, match="does not allow SageMaker"):
         client.get_execution_role()
+
+
+def test_environment_role_is_validated_and_explicit_role_wins(client, monkeypatch):
+    monkeypatch.setenv("SAGEMAKER_ROLE_ARN", ARN)
+    client.get_sagemaker_session = Mock(side_effect=AssertionError("SDK discovery attempted"))
+    assert client.get_execution_role() == ARN
+    client.iam.get_role.assert_called_once_with(RoleName="MyRole")
+    client.iam.get_role.reset_mock()
+    assert client.get_execution_role("ExplicitRole") == ARN
+    client.iam.get_role.assert_called_once_with(RoleName="ExplicitRole")
+
+
+def test_notebook_role_discovery_falls_back_to_hub_default_and_validates(client, monkeypatch):
+    module = ModuleType("sagemaker.core.helper.session_helper")
+    module.get_execution_role = Mock(side_effect=ValueError("Not a SageMaker execution role"))
+    monkeypatch.setitem(sys.modules, module.__name__, module)
+    client.get_sagemaker_session = Mock()
+    assert client.get_execution_role() == ARN
+    client.iam.get_role.assert_called_once_with(RoleName="sagemaker_execution_role")
 
 
 @pytest.mark.parametrize(

@@ -1,6 +1,7 @@
 """Generated deployment code is standalone, executable and never deployed while printing."""
 
 import ast
+import json
 import sys
 from types import ModuleType
 from types import SimpleNamespace as NS
@@ -31,7 +32,7 @@ def generation(monkeypatch, tmp_path):
         monkeypatch.setattr(
             f"hf_cloud.cli.{provider}.StateManager", Mock(side_effect=AssertionError("State changed"))
         )
-    monkeypatch.setattr("hf_cloud.cli.sagemaker.get_model_task", lambda *_: "question-answering")
+    monkeypatch.setattr("hf_cloud.cli.sagemaker.get_model_task", lambda *_: "text-generation")
     monkeypatch.setattr("hf_cloud.cli.vertex.get_model_task", lambda *_: "text-generation")
     aws = Mock(side_effect=AssertionError("AWS provider initialized"))
     vertex = Mock(side_effect=AssertionError("Vertex provider initialized"))
@@ -83,11 +84,22 @@ def module(monkeypatch, name, **members):
     monkeypatch.setitem(sys.modules, name, value)
 
 
-def test_sagemaker_code_preserves_role_schema_and_token_reference(generation, monkeypatch):
+@pytest.mark.parametrize(
+    "instance,parallel,timeout",
+    [
+        ("ml.g6.2xlarge", 1, 900),
+        ("ml.p5.48xlarge", 8, 3600),
+    ],
+)
+def test_sagemaker_code_preserves_role_schema_and_token_reference(
+    generation, monkeypatch, instance, parallel, timeout
+):
     source = generate(
         "sagemaker",
         "--region",
         "us-east-2",
+        "--instance-type",
+        instance,
         "--role-name",
         "my-role",
         "--instance-count",
@@ -107,15 +119,33 @@ def test_sagemaker_code_preserves_role_schema_and_token_reference(generation, mo
     builder, schema = Mock(), Mock()
     factory, schema_factory = Mock(return_value=builder), Mock(return_value=schema)
     module(monkeypatch, "sagemaker.core.helper.session_helper", Session=Mock(), get_execution_role=Mock())
-    module(monkeypatch, "sagemaker.serve.model_builder", ModelBuilder=factory, SchemaBuilder=schema_factory)
+    module(monkeypatch, "sagemaker.serve", ModelBuilder=factory, ModelServer=NS(VLLM="vllm-server"))
+    module(monkeypatch, "sagemaker.serve.builder.schema_builder", SchemaBuilder=schema_factory)
+    builder.deploy.return_value.invoke.return_value.body.read.return_value = b'{"choices": [{"text": "Hi"}]}'
     exec(compile(source, "snippet.py", "exec"), {})
     iam.get_role.assert_called_once_with(RoleName="my-role")
-    assert "question" in schema_factory.call_args.kwargs["sample_input"]
+    assert schema_factory.call_args.kwargs["sample_input"]["model"] == "org/model"
+    assert schema_factory.call_args.kwargs["sample_output"] == {"choices": [{"text": "Generated text."}]}
+    assert factory.call_args.kwargs["model_server"] == "vllm-server"
+    assert factory.call_args.kwargs["model_metadata"] == {"HF_TASK": "text-generation"}
+    assert factory.call_args.kwargs["env_vars"]["SM_VLLM_MODEL"] == "org/model"
+    assert factory.call_args.kwargs["env_vars"]["SM_VLLM_TENSOR_PARALLEL_SIZE"] == str(parallel)
     assert factory.call_args.kwargs["env_vars"]["HF_TOKEN"] == "runtime-secret"
-    builder.deploy.assert_called_once_with(endpoint_name="my-endpoint", initial_instance_count=2, wait=True)
+    builder.deploy.assert_called_once_with(
+        endpoint_name="my-endpoint",
+        initial_instance_count=2,
+        instance_type=instance,
+        container_timeout_in_seconds=timeout,
+        wait=True,
+    )
+    payload = builder.deploy.return_value.invoke.call_args.kwargs
+    assert payload["content_type"] == "application/json"
+    assert json.loads(payload["body"]) == schema_factory.call_args.kwargs["sample_input"]
+    builder.deploy.return_value.invoke.reset_mock()
     sm.describe_endpoint.return_value = {"EndpointStatus": "Failed", "FailureReason": "capacity"}
     with pytest.raises(RuntimeError, match="capacity"):
         exec(compile(source, "snippet.py", "exec"), {})
+    builder.deploy.return_value.invoke.assert_not_called()
 
 
 def test_vertex_code_uses_gpu_container_and_selected_scaling(generation, monkeypatch):

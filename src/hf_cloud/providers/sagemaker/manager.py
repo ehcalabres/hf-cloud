@@ -313,6 +313,7 @@ class SageMakerManager:
         instance_type = None
         instance_count = None
         model_id = "unknown"
+        serving_config = {}
 
         try:
             config_name = response.get("EndpointConfigName")
@@ -327,7 +328,9 @@ class SageMakerManager:
                 if model_name:
                     model_desc = self.client.sagemaker.describe_model(ModelName=model_name)
                     env = model_desc.get("PrimaryContainer", {}).get("Environment", {})
-                    model_id = env.get("HF_MODEL_ID", "unknown")
+                    model_id = env.get("SM_VLLM_MODEL") or env.get("HF_MODEL_ID", "unknown")
+                    if env.get("SM_VLLM_MODEL"):
+                        serving_config["model_server"] = "vllm"
         except Exception:
             pass
 
@@ -340,6 +343,7 @@ class SageMakerManager:
             config={
                 "instance_type": instance_type,
                 "instance_count": instance_count,
+                **serving_config,
             },
             endpoint_url=f"https://runtime.sagemaker.{self.client.region}.amazonaws.com/endpoints/{endpoint_name}/invocations",
             created_at=response.get("CreationTime"),
