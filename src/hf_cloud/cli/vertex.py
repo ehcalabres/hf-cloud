@@ -7,11 +7,13 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from hf_cloud.cli.deploy_code import vertex_code
 from hf_cloud.cli.estimate import provider_estimate
 from hf_cloud.core.config import Config
 from hf_cloud.core.exceptions import DeploymentNotFoundError, ProviderError
 from hf_cloud.core.state import StateManager
 from hf_cloud.providers.registry import ProviderRegistry
+from hf_cloud.utils.hf_hub import get_model_task
 from hf_cloud.utils.sdk_versions import SdkUpdateCheck
 
 console = Console()
@@ -49,6 +51,9 @@ def deploy(
     ] = None,
     min_replicas: Annotated[int, typer.Option("--min-replicas", help="Minimum number of replicas")] = 1,
     max_replicas: Annotated[int, typer.Option("--max-replicas", help="Maximum number of replicas")] = 1,
+    print_code: Annotated[
+        bool, typer.Option("--print-code", help="Print standalone Python SDK code without deploying")
+    ] = False,
 ) -> None:
     """Deploy a HuggingFace model to Google Cloud Vertex AI."""
     # Load provider configuration defaults
@@ -58,6 +63,17 @@ def deploy(
     effective_location = location or defaults.get("location") or "us-central1"
     effective_project = project or defaults.get("project")
     effective_machine_type = machine_type or defaults.get("machine_type") or "n1-standard-4"
+
+    if print_code:
+        if min_replicas < 1 or max_replicas < min_replicas or (accelerator_type and accelerator_count < 1):
+            raise typer.BadParameter("Use positive replica/GPU counts and max-replicas >= min-replicas")
+        typer.echo(vertex_code(model_id, deployment_name, {
+            "machine_type": effective_machine_type, "accelerator_type": accelerator_type,
+            "accelerator_count": accelerator_count, "location": effective_location,
+            "project": effective_project, "min_replica_count": min_replicas,
+            "max_replica_count": max_replicas,
+        }, get_model_task(model_id, token)))
+        return
 
     console.print(f"[bold blue]Deploying {model_id} to Google Cloud Vertex AI...[/bold blue]")
     update_check = SdkUpdateCheck("vertex")

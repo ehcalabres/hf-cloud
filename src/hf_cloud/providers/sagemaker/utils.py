@@ -31,6 +31,11 @@ def get_schema_builder_from_model(model_id: str, task: str) -> "SchemaBuilder":
             "SageMaker SDK is not installed. Install with: pip install --upgrade hf-cloud",
         )
 
+    return SchemaBuilder(**get_schema_samples(task))
+
+
+def get_schema_samples(task: str) -> dict[str, Any]:
+    """Sample payloads shared by ModelBuilder deployment and standalone code generation."""
     # Define sample inputs/outputs based on task
     task_schemas = {
         "text-generation": {
@@ -83,10 +88,7 @@ def get_schema_builder_from_model(model_id: str, task: str) -> "SchemaBuilder":
     # Get schema for task, default to text-generation
     schema = task_schemas.get(task, task_schemas["text-generation"])
 
-    return SchemaBuilder(
-        sample_input=schema["sample_input"],
-        sample_output=schema["sample_output"],
-    )
+    return schema
 
 
 def get_sagemaker_endpoint_name(model_id: str) -> str:

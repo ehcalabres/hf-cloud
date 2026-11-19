@@ -74,6 +74,17 @@ keeps equal endpoint names in different workspaces separate.
 
 ## Export a starting point for production
 
+For standalone Python SDK code with the same pinned catalog model, use:
+
+```bash
+hf-cloud azureml deploy Qwen/Qwen3-8B --name qwen-test --print-code > deploy.py
+```
+
+This reads the catalog and requires workspace scope configuration, without creating
+resources or local state. Run the generated script separately to deploy. Use
+`--print-code` separately from `--dry-run` and `--export-dir`. JSON exports are
+available below when Azure CLI definitions are more useful.
+
 ```bash
 hf-cloud azureml deploy Qwen/Qwen2.5-32B-Instruct --name qwen-test \
   --instance-type Standard_NC40ads_H100_v5 --catalog-version 1 \

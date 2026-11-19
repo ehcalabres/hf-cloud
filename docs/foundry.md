@@ -86,6 +86,17 @@ inspect and remove any resources left by Azure.
 
 ## Advanced profiles and explicit references
 
+Print standalone Python SDK deployment code instead of deploying:
+
+```bash
+hf-cloud foundry deploy Qwen/Qwen3-14B --name qwen-test --print-code > deploy.py
+```
+
+Account scope configuration is required. Automatic discovery reads the catalog
+and pins the model/template; a complete explicit profile can generate code offline.
+No resources or local deployment state are created until you separately execute
+the script. Use `--print-code` separately from the JSON `--dry-run` mode.
+
 Reusable profiles remain available when you want to pin model/template inputs,
 share known template metadata, or preview without catalog access:
 

@@ -48,6 +48,38 @@ pip install -e .
 uv sync --group dev
 ```
 
+### Print deployment code
+
+Add `--print-code` to any provider's `deploy` command to print standalone Python
+SDK code instead of provisioning resources:
+
+```bash
+hf cloud sagemaker deploy gpt2 --name gpt2-test --role-name SageMakerExecutionRole --print-code > deploy.py
+hf cloud vertex deploy gpt2 --name gpt2-test --project MY_PROJECT \
+  --machine-type g2-standard-4 --accelerator-type NVIDIA_L4 --print-code
+hf cloud azureml deploy Qwen/Qwen3-8B --name qwen-test --print-code
+hf cloud foundry deploy Qwen/Qwen3-14B --name qwen-test --print-code
+```
+
+Use the same options and configured defaults as for deployment, including Microsoft
+workspace/account scope options before `deploy`. Microsoft generation requires
+the same scope configuration as `--dry-run`; catalog discovery reads Azure metadata
+and pins the resolved model/template. SageMaker and Vertex read Hub metadata for
+the serving task but do not require cloud credentials to generate code. With a
+complete Foundry profile, code generation can run without catalog access.
+
+Output is plain Python, suitable for redirection. The script uses the provider SDKs
+directly and does not import HF Cloud; its header lists required packages. Review
+it, authenticate with the provider, then run `python deploy.py` to deploy. The
+snippet is an SDK starting point and does not reproduce every HF Cloud preflight
+check. Generated scripts do not record deployments in HF Cloud's local state.
+Token values passed with `--token` are never embedded: the script reads `HF_TOKEN`
+or the local Hugging Face login when executed. Microsoft secret connections remain
+references. Code generation creates no cloud resources, writes no deployment state,
+and does not run SDK update checks. For Microsoft providers, use `--print-code`
+separately from `--dry-run`; Azure ML's `--export-dir` remains available for JSON
+deployment definitions and cannot be combined with `--print-code`.
+
 ### Provider SDK versions
 
 Deployments use the SDKs installed in the environment running HF Cloud. Dependency

@@ -10,6 +10,7 @@ from rich.console import Console
 from rich.table import Table
 from rich.text import Text
 
+from hf_cloud.cli.deploy_code import foundry_code
 from hf_cloud.cli.estimate import provider_estimate
 from hf_cloud.core.exceptions import ConfigurationError, HFCloudError
 from hf_cloud.core.state import StateManager
@@ -113,8 +114,13 @@ def deploy(
             help="Print the SDK request without provisioning; automatic discovery reads the catalog",
         ),
     ] = False,
+    print_code: Annotated[
+        bool, typer.Option("--print-code", help="Print Python SDK code; catalog discovery never deploys")
+    ] = False,
 ) -> None:
     """Deploy a published model/template to Foundry GlobalManagedCompute."""
+    if print_code and dry_run:
+        raise typer.BadParameter("Use --print-code separately from --dry-run")
     if profile and any(
         value is not None for value in (model_asset_id, template, accelerator_type, catalog_version)
     ):
@@ -135,6 +141,9 @@ def deploy(
         scope = provider.client.scope(name)
         config = provider.prepare_config(model_id, config)
         resource = provider.deployment_resource(model_id, config)
+        if print_code:
+            typer.echo(foundry_code(resource, scope, provider.client))
+            return
         if dry_run:
             typer.echo(
                 json.dumps(

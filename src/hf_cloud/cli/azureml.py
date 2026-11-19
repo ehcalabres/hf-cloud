@@ -10,6 +10,7 @@ from rich.console import Console
 from rich.table import Table
 from rich.text import Text
 
+from hf_cloud.cli.deploy_code import azureml_code
 from hf_cloud.cli.estimate import provider_estimate
 from hf_cloud.core.config import Config
 from hf_cloud.core.exceptions import HFCloudError
@@ -119,8 +120,13 @@ def deploy(
             help="Export pinned endpoint/deployment JSON for Azure CLI; use --dry-run to export without deploying",
         ),
     ] = None,
+    print_code: Annotated[
+        bool, typer.Option("--print-code", help="Print pinned Python SDK code; reads the catalog, never deploys")
+    ] = False,
 ) -> None:
     """Deploy a published catalog model using its provided runtime and scoring configuration."""
+    if print_code and (dry_run or export_dir):
+        raise typer.BadParameter("Use --print-code separately from --dry-run and --export-dir")
     with _errors():
         provider = ctx.obj
         if provider.client.deployment_name:
@@ -137,6 +143,9 @@ def deploy(
         }
         plan = provider.prepare_deployment(model_id, name, config)
         config["catalog_version"] = plan["deployment"]["model"].rsplit("/", 1)[-1]
+        if print_code:
+            typer.echo(azureml_code(plan, provider.client))
+            return
         if export_dir:
             _export_plan(export_dir, plan)
         if dry_run:

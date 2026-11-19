@@ -85,7 +85,9 @@ class VertexDeployer:
             task = get_model_task(model_id=model_id, token=token)
 
             # Get the serving container URI for HuggingFace models
-            serving_container_uri = get_serving_container_uri(location=location)
+            serving_container_uri = get_serving_container_uri(
+                location=location, machine_type=machine_type, accelerator_type=accelerator_type
+            )
 
             # Build environment variables for the container
             env_vars = get_vertex_env_vars(model_id=model_id, token=token, task=task)

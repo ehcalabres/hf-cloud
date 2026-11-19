@@ -65,6 +65,8 @@ Standalone fallback:
 3. Deploy a model:
    - `hf cloud sagemaker deploy MODEL_ID --name NAME`
    - `hf cloud vertex deploy MODEL_ID --name NAME`
+   - Add `--print-code` to any provider's deploy command to emit standalone Python
+     SDK code without deploying, e.g. `hf cloud sagemaker deploy MODEL_ID --name NAME --print-code > deploy.py`.
    - `hf cloud azureml deploy MODEL_ID --name NAME --dry-run --export-dir ./azure-deployment`
    - Remove `--dry-run` after reviewing the plan to provision an Azure ML endpoint.
    - `hf cloud foundry deploy MODEL_ID --name NAME --dry-run`
@@ -124,6 +126,16 @@ and must match a published model version and active allowed template/GPU layout.
 hints pin the verified catalog version. Catalog availability is separate from
 runtime workload compatibility, SKU support, capacity and quota. Never substitute
 Azure VM prices for Foundry managed compute.
+
+`deploy --print-code` prints plain standalone SDK Python; generation creates no
+resources or local deployment state and skips SDK version checks. SageMaker/Vertex
+may read Hub task metadata. Microsoft providers require scope settings and may
+read the catalog to pin model/template versions; complete Foundry profiles work
+offline. Never embed tokens in generated code: scripts use HF_TOKEN or cached HF
+login at runtime. Microsoft secret connections remain references. Review SDK
+packages/authentication and execute the script separately to deploy. These scripts
+do not register local HF Cloud state or reproduce every CLI preflight check.
+Do not combine --print-code with --dry-run or Azure ML --export-dir.
 
 Cost projections use `--hours` and `--instance-count`, assuming constant replicas.
 Rates already include every GPU in an instance; do not multiply GPU count twice.
