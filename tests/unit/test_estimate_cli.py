@@ -2,6 +2,7 @@
 
 import json
 import shlex
+from inspect import signature
 
 import pytest
 from typer.main import get_command
@@ -177,13 +178,16 @@ def test_model_failure_shares_the_same_json(comparison, provider):
 
 def test_option_definitions_and_defaults_cannot_drift():
     root = get_command(app)
+    canonical_parameters = signature(root.commands["estimate"].callback).parameters
     canonical = {param.name: param for param in root.commands["estimate"].params if param.name != "providers"}
     for provider in ("sagemaker", "vertex"):
-        shortcut = {param.name: param for param in root.commands[provider].commands["estimate"].params}
+        command = root.commands[provider].commands["estimate"]
+        shortcut_parameters = signature(command.callback).parameters
+        shortcut = {param.name: param for param in command.params}
         assert shortcut.keys() == canonical.keys()
         for name, param in canonical.items():
             assert shortcut[name].default == param.default
             assert shortcut[name].opts == param.opts
-            assert type(shortcut[name].type) is type(param.type)
-            if hasattr(param.type, "choices"):
-                assert shortcut[name].type.choices == param.type.choices
+            # Annotations include types, enum choices and option constraints without
+            # relying on parser internals, which changed in Typer 0.29.
+            assert shortcut_parameters[name] == canonical_parameters[name]
