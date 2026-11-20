@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any, Optional
 from huggingface_hub import model_info
 
 from hf_cloud.core.exceptions import ProviderError
+from hf_cloud.utils.environment import merge_environment
 from hf_cloud.utils.hf_mem import load_instance_data
 
 if TYPE_CHECKING:
@@ -131,7 +132,11 @@ def get_sagemaker_endpoint_name(model_id: str) -> str:
 
 
 def get_sagemaker_env_vars(
-    model_id: str, token: Optional[str] = None, task: Optional[str] = None, tensor_parallel_size: int = 1
+    model_id: str,
+    token: Optional[str] = None,
+    task: Optional[str] = None,
+    tensor_parallel_size: int = 1,
+    environment_variables: Optional[dict[str, str]] = None,
 ) -> dict[str, str]:
     """Get environment variables for SageMaker deployment.
 
@@ -158,7 +163,7 @@ def get_sagemaker_env_vars(
     if task:
         env_vars["HF_TASK"] = task
 
-    return env_vars
+    return merge_environment(env_vars, environment_variables)
 
 
 def sanitize_endpoint_name(name: str) -> str:

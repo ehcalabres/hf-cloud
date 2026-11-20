@@ -1,5 +1,6 @@
 """Google Cloud Vertex AI CLI commands."""
 
+from pathlib import Path
 from typing import Annotated, Optional
 
 import typer
@@ -8,6 +9,7 @@ from rich.table import Table
 
 from hf_cloud.cli.deploy_code import vertex_code
 from hf_cloud.cli.deployment_selection import announce_selection, choose_instance
+from hf_cloud.cli.environment import deployment_environment
 from hf_cloud.cli.estimate import provider_estimate
 from hf_cloud.core.config import Config
 from hf_cloud.core.exceptions import DeploymentNotFoundError, HFCloudError, ProviderError
@@ -57,8 +59,15 @@ def deploy(
     print_code: Annotated[
         bool, typer.Option("--print-code", help="Print standalone Python SDK code without deploying")
     ] = False,
+    env: Annotated[
+        Optional[list[str]], typer.Option("--env", help="Runtime KEY=VALUE; repeat to override defaults/files")
+    ] = None,
+    env_file: Annotated[
+        Optional[list[Path]], typer.Option("--env-file", help="UTF-8 KEY=VALUE file; repeat in merge order")
+    ] = None,
 ) -> None:
     """Deploy a HuggingFace model to Google Cloud Vertex AI."""
+    custom_env = deployment_environment(env, env_file)
     # Load provider configuration defaults
     defaults = _get_provider_defaults()
 
@@ -109,6 +118,7 @@ def deploy(
                     "project": effective_project,
                     "min_replica_count": min_replicas,
                     "max_replica_count": max_replicas,
+                    "environment_variables": custom_env,
                 },
                 get_model_task(model_id, token),
             )
@@ -129,6 +139,7 @@ def deploy(
             "project": effective_project,
             "min_replica_count": min_replicas,
             "max_replica_count": max_replicas,
+            "environment_variables": custom_env,
         }
 
         deployment = provider.deploy(

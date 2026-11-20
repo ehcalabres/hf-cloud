@@ -96,6 +96,32 @@ def test_plan_uses_only_published_model_and_secret_reference():
         serving_plan(PUBLISHED, "test", {}, token="hf_secret")
 
 
+def test_custom_environment_is_not_added_to_model_metadata():
+    plan = serving_plan(
+        PUBLISHED,
+        "test",
+        {
+            "hf_token_connection": "hub-token",
+            "environment_variables": {"CUSTOM": "private-value"},
+        },
+    )
+    assert plan["deployment"]["environment_variables"]["CUSTOM"] == "private-value"
+    assert "connections/hub-token/" in plan["deployment"]["environment_variables"]["HF_TOKEN"]
+    assert "private-value" not in str(plan["deployment"]["properties"])
+
+
+def test_conflicting_token_connection_and_env_is_rejected():
+    with pytest.raises(ConfigurationError, match="either"):
+        serving_plan(
+            PUBLISHED,
+            "test",
+            {
+                "hf_token_connection": "hub-token",
+                "environment_variables": {"HF_TOKEN": "private-value"},
+            },
+        )
+
+
 @pytest.mark.parametrize(
     "config",
     [

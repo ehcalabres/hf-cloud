@@ -76,6 +76,14 @@ Standalone fallback:
    - `hf cloud vertex deploy MODEL_ID --name NAME`
    - Add `--print-code` to any provider's deploy command to emit standalone Python
      SDK code without deploying, e.g. `hf cloud sagemaker deploy MODEL_ID --name NAME --print-code > deploy.py`.
+   - SageMaker, Vertex and Azure ML support repeatable `--env KEY=VALUE` and
+     `--env-file PATH` for deploy and printed code (also Azure ML dry-run/export).
+     Generated defaults < files in order < explicit env values in order; last wins.
+     Files are literal UTF-8 KEY=VALUE with quotes/comments, without interpolation
+     or shell execution. Custom values appear in code/exports but are omitted from
+     local state. Foundry managed compute has no runtime env override API.
+   - Environment overrides do not adjust automatic memory estimates; estimate a
+     matching workload and select hardware explicitly when changing memory settings.
    - `hf cloud azureml deploy MODEL_ID --name NAME --dry-run --export-dir ./azure-deployment`
    - Remove `--dry-run` after reviewing the plan to provision an Azure ML endpoint.
    - `hf cloud foundry deploy MODEL_ID --name NAME --dry-run`

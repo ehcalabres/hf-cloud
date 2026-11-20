@@ -101,6 +101,46 @@ Prices come from the same catalog snapshots as `estimate`, rather than live
 regional quotes. Memory fit does not verify runtime architecture support,
 regional SKU availability, quota or capacity.
 
+SageMaker, Vertex AI and Azure ML deployment commands accept repeatable
+`--env KEY=VALUE` and `--env-file PATH` options. They apply equally to deployment
+and `--print-code`, plus Azure ML `--dry-run`/`--export-dir`:
+
+```bash
+uv run hf-cloud azureml deploy Qwen/Qwen3-8B --name qwen3-test \
+  --env-file runtime.env --env MY_SETTING=override --print-code > deploy.py
+
+uv run hf-cloud sagemaker deploy LiquidAI/LFM3-1.7B --name lfm3-test \
+  --env SM_VLLM_MAX_MODEL_LEN=4096 --env SM_VLLM_GPU_MEMORY_UTILIZATION=0.85
+```
+
+Example `runtime.env`:
+
+```dotenv
+# Comments and blank lines are allowed.
+MY_SETTING="hello world"
+ANOTHER_SETTING=value=with=equals
+EMPTY_SETTING=
+```
+
+Merge order is generated defaults, env files in argument order, then `--env`
+entries in argument order. Last assignment wins. Files use UTF-8 `KEY=VALUE`
+lines with optional `export`, single/double quotes and comments. Double quotes
+support `\n`, `\r`, `\t`, `\\` and `\"` escapes. Values are not expanded from
+shell commands or other variables; multiline file values are not supported.
+
+Custom values are literal in printed code, dry-run output and exports, and are
+sent to the provider at deployment. Their mapping is excluded from HF Cloud's
+local deployment state and Azure model metadata. `--token` still becomes a runtime
+token lookup in printed code; explicitly supplying `--env HF_TOKEN=...` instead
+includes that literal value. Azure ML rejects an `HF_TOKEN` override combined
+with `--hf-token-connection`; use one token source.
+
+Environment overrides do not change the automatic estimate workload. If runtime
+settings change memory requirements, estimate the matching workload and pass
+hardware explicitly. Only variables recognized by the serving runtime affect it.
+Foundry's published managed-compute deployment API does not expose environment
+overrides, so these flags are unavailable there.
+
 ### Provider SDK versions
 
 Deployments use the SDKs installed in the environment running HF Cloud. Dependency

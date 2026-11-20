@@ -1,4 +1,3 @@
-
 """Vertex AI deployment operations."""
 
 from datetime import datetime
@@ -90,7 +89,12 @@ class VertexDeployer:
             )
 
             # Build environment variables for the container
-            env_vars = get_vertex_env_vars(model_id=model_id, token=token, task=task)
+            env_vars = get_vertex_env_vars(
+                model_id=model_id,
+                token=token,
+                task=task,
+                environment_variables=config.get("environment_variables"),
+            )
 
             console.print(f"Using serving container: {serving_container_uri}")
 
@@ -145,7 +149,7 @@ class VertexDeployer:
                 provider="vertex",
                 model_id=model_id,
                 status=DeploymentStatus.CREATING,
-                config=config,
+                config={key: value for key, value in config.items() if key != "environment_variables"},
                 endpoint_url=f"https://{location}-aiplatform.googleapis.com/v1/{endpoint.resource_name}:predict",
                 region=location,
                 instance_type=machine_type,

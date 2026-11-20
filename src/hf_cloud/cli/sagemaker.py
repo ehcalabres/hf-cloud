@@ -1,5 +1,6 @@
 """AWS SageMaker CLI commands."""
 
+from pathlib import Path
 from typing import Annotated, Optional
 
 import typer
@@ -9,6 +10,7 @@ from rich.text import Text
 
 from hf_cloud.cli.deploy_code import sagemaker_code
 from hf_cloud.cli.deployment_selection import announce_selection, choose_instance
+from hf_cloud.cli.environment import deployment_environment
 from hf_cloud.cli.estimate import provider_estimate
 from hf_cloud.core.config import Config
 from hf_cloud.core.deployment import DeploymentStatus
@@ -69,8 +71,15 @@ def deploy(
     print_code: Annotated[
         bool, typer.Option("--print-code", help="Print standalone Python SDK code without deploying")
     ] = False,
+    env: Annotated[
+        Optional[list[str]], typer.Option("--env", help="Runtime KEY=VALUE; repeat to override defaults/files")
+    ] = None,
+    env_file: Annotated[
+        Optional[list[Path]], typer.Option("--env-file", help="UTF-8 KEY=VALUE file; repeat in merge order")
+    ] = None,
 ) -> None:
     """Deploy a HuggingFace model to AWS SageMaker."""
+    custom_env = deployment_environment(env, env_file)
     if role is not None and role_name is not None:
         raise typer.BadParameter("Use either --role or --role-name, not both", param_hint="--role-name")
     if role_name is not None and (role_name.startswith("arn:") or "/" in role_name):
@@ -115,8 +124,9 @@ def deploy(
                 instance_count,
                 SageMakerClient.resolve_region(region),
                 effective_role,
-                get_model_task(model_id, token),
+                custom_env.get("HF_TASK") or get_model_task(model_id, token),
                 tensor_parallel_size,
+                custom_env,
             )
         )
         return
@@ -133,6 +143,7 @@ def deploy(
             "role": effective_role,
             "instance_count": instance_count,
             "tensor_parallel_size": tensor_parallel_size,
+            "environment_variables": custom_env,
         }
 
         deployment = provider.deploy(

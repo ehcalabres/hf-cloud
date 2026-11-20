@@ -12,6 +12,7 @@ from rich.text import Text
 
 from hf_cloud.cli.deploy_code import azureml_code
 from hf_cloud.cli.deployment_selection import announce_selection, choose_instance
+from hf_cloud.cli.environment import deployment_environment
 from hf_cloud.cli.estimate import provider_estimate
 from hf_cloud.core.exceptions import HFCloudError
 from hf_cloud.core.state import StateManager
@@ -124,8 +125,17 @@ def deploy(
         bool,
         typer.Option("--print-code", help="Print pinned Python SDK code; reads the catalog, never deploys"),
     ] = False,
+    env: Annotated[
+        Optional[list[str]], typer.Option("--env", help="Runtime KEY=VALUE; repeat to override defaults/files")
+    ] = None,
+    env_file: Annotated[
+        Optional[list[Path]], typer.Option("--env-file", help="UTF-8 KEY=VALUE file; repeat in merge order")
+    ] = None,
 ) -> None:
     """Deploy a published catalog model using its provided runtime and scoring configuration."""
+    custom_env = deployment_environment(env, env_file)
+    if hf_token_connection and "HF_TOKEN" in custom_env:
+        raise typer.BadParameter("Use either --hf-token-connection or an HF_TOKEN environment override")
     if print_code and (dry_run or export_dir):
         raise typer.BadParameter("Use --print-code separately from --dry-run and --export-dir")
     with _errors(stderr=print_code or dry_run):
@@ -150,6 +160,7 @@ def deploy(
             "deployment_name": deployment_name,
             "catalog_version": catalog_version,
             "hf_token_connection": hf_token_connection,
+            "environment_variables": custom_env,
         }
         plan = provider.prepare_deployment(model_id, name, config)
         config["catalog_version"] = plan["deployment"]["model"].rsplit("/", 1)[-1]

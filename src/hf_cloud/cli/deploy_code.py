@@ -26,6 +26,7 @@ def sagemaker_code(
     role: Optional[str],
     task: str,
     tensor_parallel_size: Optional[int] = None,
+    environment_variables: Optional[dict[str, str]] = None,
 ) -> str:
     samples = get_schema_samples(task, model_id)
     settings = get_serving_settings(instance_type, tensor_parallel_size)
@@ -58,6 +59,7 @@ token = os.environ.get("HF_TOKEN") or get_token()
 env = {_literal(env)}
 if token:
     env["HF_TOKEN"] = token
+env.update({_literal(environment_variables or {})})
 
 schema = SchemaBuilder(**{_literal(samples)})
 builder = ModelBuilder(
@@ -104,6 +106,7 @@ token = os.environ.get("HF_TOKEN") or get_token()
 env = {{"HF_MODEL_ID": {model_id!r}, "HF_TASK": {task!r}}}
 if token:
     env["HF_TOKEN"] = token
+env.update({_literal(config.get("environment_variables") or {})})
 model = aiplatform.Model.upload(
     display_name={f"hf-{endpoint}"!r},
     serving_container_image_uri={image!r},

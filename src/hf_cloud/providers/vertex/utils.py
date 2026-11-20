@@ -1,9 +1,10 @@
-
 """Vertex AI utility functions."""
 
 import re
 import time
 from typing import Optional
+
+from hf_cloud.utils.environment import merge_environment
 
 
 def sanitize_endpoint_name(name: str) -> str:
@@ -44,7 +45,11 @@ def sanitize_endpoint_name(name: str) -> str:
 
 
 def get_serving_container_uri(
-    location: str = "us-central1", use_gpu: bool = False, *, machine_type: str = "", accelerator_type: Optional[str] = None
+    location: str = "us-central1",
+    use_gpu: bool = False,
+    *,
+    machine_type: str = "",
+    accelerator_type: Optional[str] = None,
 ) -> str:
     """Get the HuggingFace serving container URI for Vertex AI.
 
@@ -73,7 +78,12 @@ def get_serving_container_uri(
     return cuda_version if gpu else cpu_version
 
 
-def get_vertex_env_vars(model_id: str, token: Optional[str] = None, task: Optional[str] = None) -> dict[str, str]:
+def get_vertex_env_vars(
+    model_id: str,
+    token: Optional[str] = None,
+    task: Optional[str] = None,
+    environment_variables: Optional[dict[str, str]] = None,
+) -> dict[str, str]:
     """Get environment variables for Vertex AI deployment.
 
     Args:
@@ -94,4 +104,4 @@ def get_vertex_env_vars(model_id: str, token: Optional[str] = None, task: Option
     if task:
         env_vars["HF_TASK"] = task
 
-    return env_vars
+    return merge_environment(env_vars, environment_variables)

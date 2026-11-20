@@ -129,6 +129,10 @@ def test_sagemaker_code_preserves_role_schema_and_token_reference(
         "2",
         "--token",
         "secret-value",
+        "--env",
+        "CUSTOM=from-cli",
+        "--env",
+        "SM_VLLM_GPU_MEMORY_UTILIZATION=0.85",
     )
     assert "secret-value" not in source
     monkeypatch.setenv("HF_TOKEN", "runtime-secret")
@@ -154,6 +158,8 @@ def test_sagemaker_code_preserves_role_schema_and_token_reference(
     assert factory.call_args.kwargs["env_vars"]["SM_VLLM_MODEL"] == "org/model"
     assert factory.call_args.kwargs["env_vars"]["SM_VLLM_TENSOR_PARALLEL_SIZE"] == str(parallel)
     assert factory.call_args.kwargs["env_vars"]["HF_TOKEN"] == "runtime-secret"
+    assert factory.call_args.kwargs["env_vars"]["CUSTOM"] == "from-cli"
+    assert factory.call_args.kwargs["env_vars"]["SM_VLLM_GPU_MEMORY_UTILIZATION"] == "0.85"
     builder.deploy.assert_called_once_with(
         endpoint_name="my-endpoint",
         initial_instance_count=2,
@@ -186,6 +192,8 @@ def test_vertex_code_uses_gpu_container_and_selected_scaling(generation, monkeyp
         "3",
         "--project",
         "project",
+        "--env",
+        "CUSTOM=from-cli",
         "--token",
         "secret-value",
     )
@@ -199,6 +207,7 @@ def test_vertex_code_uses_gpu_container_and_selected_scaling(generation, monkeyp
     monkeypatch.setattr("huggingface_hub.get_token", lambda: None)
     exec(compile(source, "snippet.py", "exec"), {})
     kwargs = api.Model.upload.call_args.kwargs
+    assert kwargs["serving_container_environment_variables"]["CUSTOM"] == "from-cli"
     assert "inference-cu121" in kwargs["serving_container_image_uri"]
     request = api.Model.upload.return_value.deploy.call_args.kwargs
     assert request["accelerator_type"] == "NVIDIA_L4" and request["accelerator_count"] == 1
@@ -217,7 +226,7 @@ def test_direct_vertex_deployment_also_selects_gpu_image(monkeypatch):
         **{name: getattr(api, name) for name in ("init", "Model", "Endpoint")},
     )
     monkeypatch.setattr("hf_cloud.providers.vertex.deployer.get_model_task", lambda **_: "text-generation")
-    VertexDeployer(Mock()).deploy(
+    deployment = VertexDeployer(Mock()).deploy(
         "org/model",
         "my-endpoint",
         {
@@ -226,14 +235,25 @@ def test_direct_vertex_deployment_also_selects_gpu_image(monkeypatch):
             "accelerator_type": "NVIDIA_L4",
             "accelerator_count": 1,
             "location": "us-central1",
+            "environment_variables": {"CUSTOM": "private-value", "HF_TASK": "custom-task"},
         },
     )
     assert "inference-cu121" in api.Model.upload.call_args.kwargs["serving_container_image_uri"]
+    assert (
+        api.Model.upload.call_args.kwargs["serving_container_environment_variables"]["CUSTOM"]
+        == "private-value"
+    )
+    assert (
+        api.Model.upload.call_args.kwargs["serving_container_environment_variables"]["HF_TASK"] == "custom-task"
+    )
+    assert "private-value" not in str(deployment.to_dict())
 
 
 def test_azureml_code_uses_pinned_plan_and_preserves_secret_connection(generation, monkeypatch):
     azure_provider, _ = generation
-    source = generate("azureml", "--instance-count", "2", "--hf-token-connection", "hub-token")
+    source = generate(
+        "azureml", "--instance-count", "2", "--hf-token-connection", "hub-token", "--env", "CUSTOM=from-cli"
+    )
     assert "HuggingFace/models/org-model/versions/3" in source
     assert "connections/hub-token/credentials/HF_TOKEN" in source
     import azure.ai.ml
@@ -247,6 +267,10 @@ def test_azureml_code_uses_pinned_plan_and_preserves_secret_connection(generatio
     exec(compile(source, "snippet.py", "exec"), {})
     deployment = client.online_deployments.begin_create_or_update.call_args.args[0]
     assert deployment.model.endswith("/versions/3") and deployment.instance_count == 2
+    assert deployment.environment_variables == {
+        "HF_TOKEN": "${{azureml://connections/hub-token/credentials/HF_TOKEN}}",
+        "CUSTOM": "from-cli",
+    }
     assert endpoint.traffic == {"main": 100}
     azure_provider.deploy.assert_not_called()
     client.reset_mock()

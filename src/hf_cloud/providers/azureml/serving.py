@@ -6,9 +6,17 @@ from typing import Any, Optional
 
 from hf_cloud.core.exceptions import ConfigurationError
 from hf_cloud.providers.azure_catalog import PublishedModel, asset_parts
+from hf_cloud.utils.environment import validate_environment
 
 DEFAULT_INSTANCE = "Standard_NC24ads_A100_v4"
-CONFIG_KEYS = {"deployment_name", "instance_type", "instance_count", "catalog_version", "hf_token_connection"}
+CONFIG_KEYS = {
+    "deployment_name",
+    "instance_type",
+    "instance_count",
+    "catalog_version",
+    "hf_token_connection",
+    "environment_variables",
+}
 
 
 def validate_name(name: str) -> str:
@@ -22,7 +30,7 @@ def validate_name(name: str) -> str:
 def validate_config(config: dict[str, Any], token: Optional[str] = None) -> None:
     if set(config) - CONFIG_KEYS:
         raise ConfigurationError(
-            "Azure ML uses the published catalog runtime. Image, engine, Hub revision and arbitrary serving overrides are not supported; use --catalog-version to pin a published version."
+            "Azure ML uses the published catalog runtime. Image, engine, Hub revision and scoring-code overrides are not supported; use --catalog-version to pin a published version."
         )
     if token:
         raise ConfigurationError(
@@ -36,6 +44,9 @@ def validate_config(config: dict[str, Any], token: Optional[str] = None) -> None
         raise ConfigurationError("Use an Azure ML VM size such as Standard_NC24ads_A100_v4")
     validate_name(config.get("deployment_name", "main"))
     connection = config.get("hf_token_connection")
+    custom_env = validate_environment(config.get("environment_variables") or {})
+    if connection and "HF_TOKEN" in custom_env:
+        raise ConfigurationError("Use either hf_token_connection or an HF_TOKEN environment override")
     if connection and (not isinstance(connection, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", connection)):
         raise ConfigurationError("Invalid workspace token connection name")
 
@@ -48,6 +59,9 @@ def serving_plan(
     asset_parts(model.asset_id, "models", "HuggingFace")
     deployment_name = config.get("deployment_name", "main")
     connection = config.get("hf_token_connection")
+    environment = dict(config.get("environment_variables") or {})
+    if connection:
+        environment["HF_TOKEN"] = "${{azureml://connections/" + connection + "/credentials/HF_TOKEN}}"
     metadata = {
         "model_asset_id": model.asset_id,
         "catalog_version": model.version,
@@ -73,15 +87,7 @@ def serving_plan(
             "model": model.asset_id,
             "instance_type": config.get("instance_type", DEFAULT_INSTANCE),
             "instance_count": config.get("instance_count", 1),
-            **(
-                {
-                    "environment_variables": {
-                        "HF_TOKEN": "${{azureml://connections/" + connection + "/credentials/HF_TOKEN}}"
-                    }
-                }
-                if connection
-                else {}
-            ),
+            **({"environment_variables": environment} if environment else {}),
             "properties": {"hf-cloud-model-id": model.hub_id, "hf-cloud-config": json.dumps(metadata)},
         },
         "traffic": {deployment_name: 100},

@@ -160,3 +160,52 @@ def test_estimation_failure_keeps_stdout_clean_and_never_deploys(provider, flow)
     cloud.deploy.assert_not_called()
     state.add_deployment.assert_not_called()
     check.assert_not_called()
+
+
+@pytest.mark.parametrize("provider", ["sagemaker", "vertex", "azureml"])
+@pytest.mark.parametrize("print_code", [False, True])
+def test_custom_environment_reaches_deploy_and_printed_code(provider, flow, tmp_path, print_code):
+    _, cloud, _, _ = flow
+    path = tmp_path / "runtime.env"
+    path.write_text('SETTING=file\nOTHER="hello world"\nEMPTY=\n', encoding="utf-8")
+    flags = ["--env-file", str(path), "--env", "SETTING=cli=value", "--env", "CUSTOM=sentinel"]
+    result = run(provider, [*flags, *(["--print-code"] if print_code else [])])
+    assert result.exit_code == 0, result.output
+    expected = {"SETTING": "cli=value", "OTHER": "hello world", "EMPTY": "", "CUSTOM": "sentinel"}
+    if print_code:
+        tree = ast.parse(result.stdout)
+        literals = [
+            ast.literal_eval(node)
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Dict)
+            and all(isinstance(key, ast.Constant) for key in node.keys)
+            and all(isinstance(value, ast.Constant) for value in node.values)
+        ]
+        assert any(all(item.get(key) == value for key, value in expected.items()) for item in literals)
+        cloud.deploy.assert_not_called()
+    elif provider == "azureml":
+        assert cloud.prepare_deployment.call_args.args[2]["environment_variables"] == expected
+        assert cloud.deploy.call_args.args[2]["environment_variables"] == expected
+    else:
+        assert cloud.deploy.call_args.kwargs["config"]["environment_variables"] == expected
+
+
+@pytest.mark.parametrize("provider", ["sagemaker", "vertex", "azureml"])
+def test_invalid_environment_stops_before_estimation_and_deploy(provider, flow):
+    choose, cloud, _, check = flow
+    result = run(provider, ["--env", "BAD-KEY=private-value", "--print-code"])
+    assert result.exit_code == 2
+    assert result.stdout == ""
+    assert "private-value" not in result.output
+    choose.assert_not_called()
+    cloud.deploy.assert_not_called()
+    check.assert_not_called()
+
+
+@pytest.mark.parametrize("provider", ["foundry"])
+def test_foundry_rejects_unsupported_environment_override(provider, flow):
+    _, cloud, _, _ = flow
+    result = run(provider, ["--env", "CUSTOM=value", "--print-code"])
+    assert result.exit_code == 2
+    assert "No such option" in result.output
+    cloud.deploy.assert_not_called()

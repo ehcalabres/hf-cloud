@@ -259,6 +259,19 @@ def test_non_generation_keeps_task_specific_serving(deployment_flow):
     assert args["env_vars"] == {"HF_MODEL_ID": "org/model", "HF_TASK": "question-answering"}
 
 
+def test_custom_env_reaches_model_builder_but_is_not_saved(deployment_flow):
+    _, _, factory, state = deployment_flow
+    result = deploy_command("--env", "CUSTOM=private-value", "--env", "SM_VLLM_MAX_MODEL_LEN=4096")
+    assert result.exit_code == 0, result.output
+    environment = factory.call_args.kwargs["env_vars"]
+    assert environment["CUSTOM"] == "private-value"
+    assert environment["SM_VLLM_MAX_MODEL_LEN"] == "4096"
+    assert environment["SM_VLLM_MODEL"] == "org/model"
+    saved = state.add_deployment.call_args.args[0].to_dict()
+    assert "private-value" not in str(saved)
+    assert "environment_variables" not in saved["config"]
+
+
 @pytest.mark.parametrize("size", [0, 2])
 def test_invalid_parallel_size_fails_before_provider_work(deployment_flow, size):
     provider, builder, _, _ = deployment_flow
