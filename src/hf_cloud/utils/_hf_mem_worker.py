@@ -1,4 +1,4 @@
-"""Isolated batch worker for the exact hf-mem revision pinned by the adapter.
+"""Isolated batch worker for the published hf-mem release pinned by the adapter.
 
 Executed by uvx's Python, not imported with hf-mem into HF Cloud's environment.
 The pinned v1 API has no reusable estimation session. These narrowly scoped
@@ -71,11 +71,15 @@ async def estimate_layouts(request: dict[str, Any]) -> list[dict[str, Any]]:
             sources[key] = (CachedSource(source), file)
         return sources[key]
 
-    async def read_cached(source, components, warnings=None):
-        key = (id(source), tuple((name, tuple(paths)) for name, paths in components.items()))
+    async def read_cached(source, components, warnings=None, quantization=None):
+        key = (
+            id(source),
+            tuple((name, tuple(paths)) for name, paths in components.items()),
+            json.dumps(quantization, sort_keys=True),
+        )
         if key not in summaries:
             emitted: list[str] = []
-            value = await read_components(source, components, emitted)
+            value = await read_components(source, components, emitted, quantization)
             summaries[key] = (value, emitted)
         value, emitted = summaries[key]
         if warnings is not None:

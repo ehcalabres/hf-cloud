@@ -517,10 +517,10 @@ These estimates follow hf-mem's serving-engine assumptions; configure the actual
 deployment's engine, sharding, context length and concurrency to match. Estimating
 local weights, GGUF or ONNX does not add deployment support for those formats.
 
-Until v1 is released, HF-Cloud runs the reviewed hf-mem commit
-[`2448e7c`](https://github.com/alvarobartt/hf-mem/commit/2448e7c6457949951495b6dba2f01ac3bebdf36a)
-through `uvx`. Install [uv](https://docs.astral.sh/uv/getting-started/installation/)
-and Git; the first estimate needs network access to install hf-mem and its
+HF-Cloud runs the published [hf-mem 1.0.0](https://pypi.org/project/hf-mem/1.0.0/)
+release, pinned as `hf-mem==1.0.0`, through `uvx`.
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/);
+the first estimate needs network access to install hf-mem and its
 dependencies. It runs in a separate Python 3.10+ environment to isolate its
 dependencies from HF-Cloud's provider SDKs.
 

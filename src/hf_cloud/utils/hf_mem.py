@@ -10,10 +10,8 @@ from typing import Any, Optional, TypedDict
 
 from hf_cloud.core.exceptions import HFCloudError
 
-# The v1 release is still pending. Use the exact reviewed source until its release
-# is validated; a moving branch or unversioned uvx package can break the contract.
-HF_MEM_REVISION = "2448e7c6457949951495b6dba2f01ac3bebdf36a"
-HF_MEM_SOURCE = f"git+https://github.com/alvarobartt/hf-mem.git@{HF_MEM_REVISION}"
+# Pin the published release: the isolated worker depends on this exact API.
+HF_MEM_SOURCE = "hf-mem==1.0.0"
 HF_MEM_VERSION = "hf-mem@1.0.0"
 
 

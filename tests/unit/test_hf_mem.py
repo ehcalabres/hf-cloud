@@ -65,7 +65,7 @@ def test_pinned_v1_command_and_total(command):
             "--python",
             ">=3.10",
             "--from",
-            HF_MEM_SOURCE,
+            "hf-mem==1.0.0",
             "hf-mem",
             "org/model",
             "--output",

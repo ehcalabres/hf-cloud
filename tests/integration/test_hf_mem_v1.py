@@ -1,6 +1,6 @@
 """Opt-in checks against the real pinned CLI, using only local model metadata.
 
-Run with HF_CLOUD_TEST_HF_MEM=1. The first run needs Git, uv and dependency
+Run with HF_CLOUD_TEST_HF_MEM=1. The first run needs uv and dependency
 network access; no Hub model download or cloud provider operation is performed.
 """
 
@@ -173,6 +173,47 @@ def test_batch_matches_standalone_for_each_layout(local_model, batched_tokens):
             local_model, options=options, gpu_memory=f"{count}x{memory}", gpu_memory_utilization=0.9
         )
         assert result.raw == single.raw
+
+
+def test_batch_preserves_release_quantization_metadata(local_model):
+    root = Path(local_model)
+    config_path, weights_path = root / "config.json", root / "model.safetensors"
+    config = json.loads(config_path.read_text())
+    config["quantization_config"] = {"quant_method": "mxfp4"}
+    config_path.write_text(json.dumps(config))
+    with weights_path.open("rb") as weights:
+        size = struct.unpack("<Q", weights.read(8))[0]
+        header = json.loads(weights.read(size))
+    offset = max(value["data_offsets"][1] for name, value in header.items() if name != "__metadata__")
+    for suffix, count in (("_blocks", 32), ("_scales", 2)):
+        header["model.layers.0.mlp.up_proj" + suffix] = {
+            "dtype": "U8",
+            "shape": [count],
+            "data_offsets": [offset, offset + count],
+        }
+        offset += count
+    raw = json.dumps(header).encode()
+    with weights_path.open("wb") as weights:
+        weights.write(struct.pack("<Q", len(raw)) + raw)
+        weights.truncate(8 + len(raw) + offset)
+
+    options = EstimateOptions(max_model_len=512)
+    batched = run_hf_mem_batch(
+        local_model,
+        [(1, 24), (4, 24)],
+        options=options,
+        gpu_memory_utilization=0.9,
+        show_all=True,
+    )
+    for count, result in zip((1, 4), batched):
+        single = run_hf_mem(
+            local_model,
+            options=options,
+            gpu_memory=f"{count}x24",
+            gpu_memory_utilization=0.9,
+        )
+        assert result.raw == single.raw
+        assert result.raw["weights"]["dtypes"]["MXFP4"] == {"bytes": 34, "params": 64}
 
 
 def test_batch_loads_hub_metadata_once_across_layouts(local_model, monkeypatch, tmp_path):
