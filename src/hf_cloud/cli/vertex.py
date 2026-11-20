@@ -1,4 +1,3 @@
-
 """Google Cloud Vertex AI CLI commands."""
 
 from typing import Annotated, Optional
@@ -8,12 +7,14 @@ from rich.console import Console
 from rich.table import Table
 
 from hf_cloud.cli.deploy_code import vertex_code
+from hf_cloud.cli.deployment_selection import announce_selection, choose_instance
 from hf_cloud.cli.estimate import provider_estimate
 from hf_cloud.core.config import Config
-from hf_cloud.core.exceptions import DeploymentNotFoundError, ProviderError
+from hf_cloud.core.exceptions import DeploymentNotFoundError, HFCloudError, ProviderError
 from hf_cloud.core.state import StateManager
 from hf_cloud.providers.registry import ProviderRegistry
 from hf_cloud.utils.hf_hub import get_model_task
+from hf_cloud.utils.hf_mem import load_instance_data
 from hf_cloud.utils.sdk_versions import SdkUpdateCheck
 
 console = Console()
@@ -27,7 +28,6 @@ def _get_provider_defaults() -> dict[str, Optional[str]]:
     return {
         "project": provider_config.get("default_project"),
         "location": provider_config.get("default_location"),
-        "machine_type": provider_config.get("default_machine_type"),
     }
 
 
@@ -38,12 +38,15 @@ def deploy(
     ],
     deployment_name: Annotated[str, typer.Option("--name", "-n", help="Name for the deployment/endpoint")],
     machine_type: Annotated[
-        Optional[str], typer.Option("--machine-type", "-m", help="vertex machine type (e.g., 'n1-standard-4')")
+        Optional[str],
+        typer.Option("--machine-type", "-m", help="Machine type; omitted selects cheapest compatible estimate"),
     ] = None,
     accelerator_type: Annotated[
         Optional[str], typer.Option("--accelerator-type", "-a", help="GPU type (e.g., 'NVIDIA_TESLA_T4')")
     ] = None,
-    accelerator_count: Annotated[int, typer.Option("--accelerator-count", help="Number of GPUs")] = 1,
+    accelerator_count: Annotated[
+        Optional[int], typer.Option("--accelerator-count", min=1, help="GPUs per replica")
+    ] = None,
     location: Annotated[Optional[str], typer.Option("--location", "-l", help="vertex location/region")] = None,
     project: Annotated[Optional[str], typer.Option("--project", "-p", help="vertex project ID")] = None,
     token: Annotated[
@@ -59,20 +62,57 @@ def deploy(
     # Load provider configuration defaults
     defaults = _get_provider_defaults()
 
-    # Use provided values or fall back to config defaults, then hardcoded defaults
+    # Account defaults remain configured; hardware is selected per model below.
     effective_location = location or defaults.get("location") or "us-central1"
     effective_project = project or defaults.get("project")
-    effective_machine_type = machine_type or defaults.get("machine_type") or "n1-standard-4"
+    if min_replicas < 1 or max_replicas < min_replicas:
+        raise typer.BadParameter("Use positive replica counts and max-replicas >= min-replicas")
+    effective_machine_type = machine_type
+    if effective_machine_type is None:
+        typer.echo("Estimating compatible Vertex AI instances...", err=True)
+        try:
+            match = choose_instance(
+                model_id,
+                "vertex",
+                token=token,
+                accelerator_type=accelerator_type,
+                accelerator_count=accelerator_count,
+            )
+        except HFCloudError as error:
+            typer.echo(
+                f"Error selecting an instance: {error}. Use --machine-type to select explicitly.", err=True
+            )
+            raise typer.Exit(code=1) from error
+        announce_selection(match)
+        hardware = match.instance
+        effective_machine_type = hardware["instanceType"]
+    else:
+        hardware = next(
+            (item for item in load_instance_data("vertex").instances if item["instanceType"] == machine_type),
+            {},
+        )
+    accelerator_type = accelerator_type or hardware.get("acceleratorType")
+    accelerator_count = accelerator_count if accelerator_count is not None else hardware.get("numGpu", 1)
 
     if print_code:
         if min_replicas < 1 or max_replicas < min_replicas or (accelerator_type and accelerator_count < 1):
             raise typer.BadParameter("Use positive replica/GPU counts and max-replicas >= min-replicas")
-        typer.echo(vertex_code(model_id, deployment_name, {
-            "machine_type": effective_machine_type, "accelerator_type": accelerator_type,
-            "accelerator_count": accelerator_count, "location": effective_location,
-            "project": effective_project, "min_replica_count": min_replicas,
-            "max_replica_count": max_replicas,
-        }, get_model_task(model_id, token)))
+        typer.echo(
+            vertex_code(
+                model_id,
+                deployment_name,
+                {
+                    "machine_type": effective_machine_type,
+                    "accelerator_type": accelerator_type,
+                    "accelerator_count": accelerator_count,
+                    "location": effective_location,
+                    "project": effective_project,
+                    "min_replica_count": min_replicas,
+                    "max_replica_count": max_replicas,
+                },
+                get_model_task(model_id, token),
+            )
+        )
         return
 
     console.print(f"[bold blue]Deploying {model_id} to Google Cloud Vertex AI...[/bold blue]")

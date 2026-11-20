@@ -8,10 +8,11 @@ from rich.table import Table
 from rich.text import Text
 
 from hf_cloud.cli.deploy_code import sagemaker_code
+from hf_cloud.cli.deployment_selection import announce_selection, choose_instance
 from hf_cloud.cli.estimate import provider_estimate
 from hf_cloud.core.config import Config
 from hf_cloud.core.deployment import DeploymentStatus
-from hf_cloud.core.exceptions import DeploymentError, DeploymentNotFoundError, ProviderError
+from hf_cloud.core.exceptions import DeploymentError, DeploymentNotFoundError, HFCloudError, ProviderError
 from hf_cloud.core.state import StateManager
 from hf_cloud.providers.sagemaker import SageMakerProvider
 from hf_cloud.providers.sagemaker.client import SageMakerClient
@@ -29,7 +30,6 @@ def _get_provider_defaults() -> dict[str, Optional[str]]:
     provider_config = config.get_provider_config("sagemaker")
     return {
         "role": provider_config.get("default_role"),
-        "instance_type": provider_config.get("default_instance_type"),
     }
 
 
@@ -40,7 +40,8 @@ def deploy(
     ],
     deployment_name: Annotated[str, typer.Option("--name", "-n", help="Name for the deployment/endpoint")],
     instance_type: Annotated[
-        Optional[str], typer.Option("--instance-type", "-i", help="EC2 instance type (e.g., 'ml.g5.xlarge')")
+        Optional[str],
+        typer.Option("--instance-type", "-i", help="EC2 type; omitted selects cheapest compatible estimate"),
     ] = None,
     region: Annotated[Optional[str], typer.Option("--region", "-r", help="AWS region")] = None,
     role: Annotated[
@@ -79,12 +80,27 @@ def deploy(
     # Load provider configuration defaults
     defaults = _get_provider_defaults()
 
-    # Use provided values or fall back to config defaults, then hardcoded defaults
+    # Role defaults remain configured; hardware is selected per model below.
     effective_role = role_name if role_name is not None else role if role is not None else defaults.get("role")
-    effective_instance_type = instance_type or defaults.get("instance_type") or "ml.g5.xlarge"
-
     if instance_count < 1:
         raise typer.BadParameter("Instance count must be positive", param_hint="--instance-count")
+    effective_instance_type = instance_type
+    if effective_instance_type is None:
+        typer.echo("Estimating compatible SageMaker instances...", err=True)
+        try:
+            match = choose_instance(
+                model_id,
+                "sagemaker",
+                token=token,
+                tensor_parallel_size=tensor_parallel_size,
+            )
+        except HFCloudError as error:
+            typer.echo(
+                f"Error selecting an instance: {error}. Use --instance-type to select explicitly.", err=True
+            )
+            raise typer.Exit(code=1) from error
+        announce_selection(match)
+        effective_instance_type = match.instance["instanceType"]
     try:
         get_serving_settings(effective_instance_type, tensor_parallel_size)
     except ValueError as error:

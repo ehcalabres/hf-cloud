@@ -36,6 +36,7 @@ def select_instances(
     options: EstimateOptions,
     *,
     show_all: bool = False,
+    token: Optional[str] = None,
 ) -> InstanceSelection:
     """Check layouts in ascending total VRAM order; equal capacities keep catalog order.
 
@@ -57,7 +58,12 @@ def select_instances(
             layouts.append(layout)
     estimates = (
         run_hf_mem_batch(
-            model_id, layouts, options=options, gpu_memory_utilization=1 - safety_margin, show_all=show_all
+            model_id,
+            layouts,
+            options=options,
+            gpu_memory_utilization=1 - safety_margin,
+            show_all=show_all,
+            **({"token": token} if token is not None else {}),
         )
         if layouts
         else []
@@ -99,12 +105,20 @@ def compare_instances(
     options: EstimateOptions,
     *,
     descending: bool = False,
+    token: Optional[str] = None,
 ) -> InstanceSelection:
     """Rank all compatible provider instances while assessing shared GPU layouts once."""
     instances = [
         dict(instance, provider=catalog.provider) for catalog in catalogs for instance in catalog.instances
     ]
-    selection = select_instances(model_id, instances, safety_margin, options, show_all=True)
+    selection = select_instances(
+        model_id,
+        instances,
+        safety_margin,
+        options,
+        show_all=True,
+        **({"token": token} if token is not None else {}),
+    )
     priced = [match for match in selection.matches if hourly_price(match.instance) is not None]
     unpriced = [match for match in selection.matches if hourly_price(match.instance) is None]
     identity = lambda match: (match.instance["provider"], match.instance.get("instanceType", ""))

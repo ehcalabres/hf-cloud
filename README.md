@@ -80,6 +80,27 @@ and does not run SDK update checks. For Microsoft providers, use `--print-code`
 separately from `--dry-run`; Azure ML's `--export-dir` remains available for JSON
 deployment definitions and cannot be combined with `--print-code`.
 
+Omitting hardware selects the cheapest compatible, priced option from that
+provider's estimate for both deployment and printed code. This uses the default
+estimate workload and 10% GPU memory reserve. SageMaker and Azure ML accept
+`--instance-type` to skip automatic selection; Vertex accepts `--machine-type`.
+Foundry automatically selects among the model's published templates, while
+`--template` or `--profile` preserves a specific selection. Vertex accelerator
+type/count and Foundry accelerator type restrict automatic candidates. SageMaker
+`--tensor-parallel-size` makes the fit check use only that many GPUs per replica.
+
+Azure ML and Foundry require catalog availability before automatic estimation;
+the resolved catalog model/template version is pinned in the deployment or code.
+If estimation fails, no priced instance fits, or no verified Foundry template
+layout is available, the command stops before provisioning. Select hardware
+explicitly to bypass estimation. Messages go to stderr, keeping code and dry-run
+JSON on stdout. Old configured instance/machine defaults are ignored; provider
+configuration retains account, region and role settings.
+
+Prices come from the same catalog snapshots as `estimate`, rather than live
+regional quotes. Memory fit does not verify runtime architecture support,
+regional SKU availability, quota or capacity.
+
 ### Provider SDK versions
 
 Deployments use the SDKs installed in the environment running HF Cloud. Dependency
@@ -223,7 +244,6 @@ You can configure some default settings for your cloud provider. This step is op
 ```bash
 <cli> sagemaker deploy gpt2 \
   --name my-gpt2-endpoint \
-  --instance-type ml.g5.xlarge \
   --region us-east-1
 ```
 

@@ -219,7 +219,10 @@ def test_deploy_commands_show_notices_on_completion_without_changing_outcome(mon
         monkeypatch.setattr(module.ProviderRegistry, "get_provider", Mock(return_value=cloud))
     state = Mock()
     monkeypatch.setattr(module, "StateManager", Mock(return_value=state))
-    result = CliRunner().invoke(app, [provider, "deploy", "org/model", "--name", "test"])
+    hardware = (
+        ["--instance-type", "ml.g6.2xlarge"] if provider == "sagemaker" else ["--machine-type", "g2-standard-4"]
+    )
+    result = CliRunner().invoke(app, [provider, "deploy", "org/model", "--name", "test", *hardware])
     assert result.exit_code == (1 if fails else 0), result.output
     checker.assert_called_once_with(provider)
     check.notify.assert_called_once_with(module.console)

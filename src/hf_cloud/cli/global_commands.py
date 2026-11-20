@@ -238,18 +238,12 @@ def configure_provider(
             "Default IAM role ARN (optional, press Enter to skip)",
             default=current_config.get("default_role", ""),
         )
-        default_instance_type = typer.prompt(
-            "Default instance type (optional, press Enter to skip)",
-            default=current_config.get("default_instance_type", ""),
-        )
 
         new_config = {
             "default_region": default_region,
         }
         if default_role:
             new_config["default_role"] = default_role
-        if default_instance_type:
-            new_config["default_instance_type"] = default_instance_type
 
         config.set_provider_config(provider, new_config)
 
@@ -263,10 +257,6 @@ def configure_provider(
             ),
             "workspace_name": typer.prompt(
                 "Azure ML workspace", default=current_config.get("workspace_name", "")
-            ),
-            "default_instance_type": typer.prompt(
-                "Default GPU VM size",
-                default=current_config.get("default_instance_type", "Standard_NC24ads_A100_v4"),
             ),
         }
         config.set_provider_config(provider, new_config)
@@ -301,17 +291,11 @@ def configure_provider(
             "Default location/region",
             default=current_config.get("default_location", "us-central1"),
         )
-        default_machine_type = typer.prompt(
-            "Default machine type (optional, press Enter to skip)",
-            default=current_config.get("default_machine_type", ""),
-        )
 
         new_config = {
             "default_project": project_id,
             "default_location": default_location,
         }
-        if default_machine_type:
-            new_config["default_machine_type"] = default_machine_type
 
         config.set_provider_config("vertex", new_config)
 

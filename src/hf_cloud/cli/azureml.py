@@ -11,12 +11,11 @@ from rich.table import Table
 from rich.text import Text
 
 from hf_cloud.cli.deploy_code import azureml_code
+from hf_cloud.cli.deployment_selection import announce_selection, choose_instance
 from hf_cloud.cli.estimate import provider_estimate
-from hf_cloud.core.config import Config
 from hf_cloud.core.exceptions import HFCloudError
 from hf_cloud.core.state import StateManager
 from hf_cloud.providers.azureml import AzureMLProvider
-from hf_cloud.providers.azureml.serving import DEFAULT_INSTANCE
 from hf_cloud.utils.sdk_versions import SdkUpdateCheck
 
 console = Console()
@@ -37,11 +36,11 @@ def workspace_scope(
 
 
 @contextmanager
-def _errors():
+def _errors(*, stderr: bool = False):
     try:
         yield
     except (HFCloudError, OSError, ValueError) as error:
-        console.print(Text(f"Error: {error}", style="bold red"))
+        (Console(stderr=True) if stderr else console).print(Text(f"Error: {error}", style="bold red"))
         raise typer.Exit(code=1) from error
 
 
@@ -92,7 +91,8 @@ def deploy(
     model_id: Annotated[str, typer.Argument(help="Published Hugging Face Hub model ID (org/model)")],
     name: Annotated[str, typer.Option("--name", "-n", help="New endpoint name")],
     instance_type: Annotated[
-        Optional[str], typer.Option("--instance-type", "-i", help="VM size supported by the published model")
+        Optional[str],
+        typer.Option("--instance-type", "-i", help="VM size; omitted selects cheapest compatible estimate"),
     ] = None,
     instance_count: Annotated[int, typer.Option("--instance-count", "-c", min=1)] = 1,
     deployment_name: Annotated[
@@ -121,21 +121,31 @@ def deploy(
         ),
     ] = None,
     print_code: Annotated[
-        bool, typer.Option("--print-code", help="Print pinned Python SDK code; reads the catalog, never deploys")
+        bool,
+        typer.Option("--print-code", help="Print pinned Python SDK code; reads the catalog, never deploys"),
     ] = False,
 ) -> None:
     """Deploy a published catalog model using its provided runtime and scoring configuration."""
     if print_code and (dry_run or export_dir):
         raise typer.BadParameter("Use --print-code separately from --dry-run and --export-dir")
-    with _errors():
+    with _errors(stderr=print_code or dry_run):
         provider = ctx.obj
         if provider.client.deployment_name:
             raise typer.BadParameter("For a new endpoint, put --deployment-name after deploy")
         resource_id = provider.client.resource_id(name)
+        if instance_type is None:
+            typer.echo("Estimating compatible Azure ML instances...", err=True)
+            match = choose_instance(
+                model_id,
+                "azureml",
+                registry=provider.catalog,
+                catalog_version=catalog_version,
+            )
+            announce_selection(match)
+            instance_type = match.instance["instanceType"]
+            catalog_version = match.instance["modelAssetId"].rsplit("/", 1)[-1]
         config = {
-            "instance_type": instance_type
-            or Config().get_provider_config("azureml").get("default_instance_type")
-            or DEFAULT_INSTANCE,
+            "instance_type": instance_type,
             "instance_count": instance_count,
             "deployment_name": deployment_name,
             "catalog_version": catalog_version,

@@ -34,6 +34,16 @@ def deployment_flow(monkeypatch):
     monkeypatch.setattr(cli, "SageMakerProvider", Mock(return_value=provider))
     monkeypatch.setattr(cli, "_get_provider_defaults", lambda: {"role": "configured-role"})
     monkeypatch.setattr(cli, "SdkUpdateCheck", Mock())
+    monkeypatch.setattr(
+        cli,
+        "choose_instance",
+        Mock(
+            return_value=SimpleNamespace(
+                instance={"instanceType": "ml.g6.2xlarge", "pricePerHourUsd": 1.222},
+                estimate=SimpleNamespace(warnings=()),
+            )
+        ),
+    )
     state = Mock()
     monkeypatch.setattr(cli, "StateManager", Mock(return_value=state))
     return provider, builder, factory, state
@@ -64,7 +74,7 @@ def test_sdk_return_without_inservice_never_reports_success(deployment_flow, sta
     builder.deploy.assert_called_once_with(
         endpoint_name="test-endpoint",
         initial_instance_count=1,
-        instance_type="ml.g5.xlarge",
+        instance_type="ml.g6.2xlarge",
         container_timeout_in_seconds=900,
         wait=True,
     )
@@ -102,7 +112,7 @@ def test_inservice_is_saved_and_reported_running(deployment_flow):
     builder.deploy.assert_called_once_with(
         endpoint_name="test-endpoint",
         initial_instance_count=1,
-        instance_type="ml.g5.xlarge",
+        instance_type="ml.g6.2xlarge",
         container_timeout_in_seconds=900,
         wait=True,
     )

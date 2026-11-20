@@ -255,6 +255,7 @@ def run_hf_mem_batch(
     gpu_memory_utilization: float,
     show_all: bool = False,
     timeout: int = 120,
+    token: Optional[str] = None,
 ) -> list[HfMemEstimate]:
     """Evaluate ordered GPU layouts in one process with shared model metadata."""
     options.validate()
@@ -284,6 +285,7 @@ def run_hf_mem_batch(
             ],
             input_text=json.dumps(request),
             timeout_s=timeout,
+            **({"env": {"HF_TOKEN": token}} if token is not None else {}),
         )
         if result.returncode != 0:
             raise HfMemError(f"hf-mem failed for model {model_id}", details=result.stderr or None)

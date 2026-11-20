@@ -34,6 +34,19 @@ def isolated(tmp_path, monkeypatch):
     monkeypatch.setattr("hf_cloud.core.config.Config.DEFAULT_CONFIG_FILE", tmp_path / "config.json")
     monkeypatch.setattr(StateManager, "DEFAULT_STATE_FILE", tmp_path / "state.json")
     monkeypatch.setenv("HF_CLOUD_NO_UPDATE_CHECK", "1")
+    monkeypatch.setattr(
+        "hf_cloud.cli.azureml.choose_instance",
+        Mock(
+            return_value=NS(
+                instance={
+                    "instanceType": DEFAULT_INSTANCE,
+                    "modelAssetId": PUBLISHED.asset_id,
+                    "pricePerHourUsd": 3.673,
+                },
+                estimate=NS(warnings=()),
+            )
+        ),
+    )
     for key in ("AZURE_SUBSCRIPTION_ID", "AZURE_RESOURCE_GROUP", "AZUREML_WORKSPACE_NAME"):
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setattr("hf_cloud.providers.azure_catalog.AzureCatalog.resolve", Mock(return_value=PUBLISHED))
@@ -207,7 +220,7 @@ def test_dry_run_reads_catalog_but_never_provisions_and_can_export(monkeypatch, 
             str(directory),
         ],
     )
-    assert again.exit_code == 1 and "overwrite" in again.stdout
+    assert again.exit_code == 1 and "overwrite" in again.stderr
 
 
 def test_failed_cli_deploy_never_records_or_prints_success(monkeypatch):

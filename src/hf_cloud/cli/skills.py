@@ -63,6 +63,12 @@ Standalone fallback:
    - `hf cloud foundry estimate MODEL_ID`
    - `hf cloud foundry estimate MODEL_ID --profile PROFILE.json` (optional override)
 3. Deploy a model:
+   - Omit hardware flags to choose the cheapest priced compatible estimate within
+     the provider (default workload, 10% memory reserve). This also applies to
+     `--print-code` and Microsoft `--dry-run`. Selection messages go to stderr.
+   - Explicit SageMaker/Azure ML `--instance-type`, Vertex `--machine-type`, or
+     Foundry `--template`/`--profile` skips automatic hardware selection. Old
+     configured hardware defaults are ignored; no-fit/estimate errors stop deploy.
    - `hf cloud sagemaker deploy MODEL_ID --name NAME`
    - SageMaker text generation uses the Hub's ModelBuilder/VLLM recipe. GPUs per
      replica default to the bundled instance GPU count (otherwise 1); override

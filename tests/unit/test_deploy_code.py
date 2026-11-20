@@ -65,6 +65,29 @@ def generation(monkeypatch, tmp_path):
     foundry.deployment_resource.side_effect = FoundryProvider.deployment_resource
     monkeypatch.setattr("hf_cloud.cli.azureml.AzureMLProvider", lambda *_: azure)
     monkeypatch.setattr("hf_cloud.cli.foundry.FoundryProvider", lambda *_: foundry)
+    for name, instance in {
+        "sagemaker": {"instanceType": "ml.g6.2xlarge"},
+        "vertex": {"instanceType": "g2-standard-4", "acceleratorType": "NVIDIA_L4", "numGpu": 1},
+        "azureml": {
+            "instanceType": "Standard_NC24ads_A100_v4",
+            "modelAssetId": "azureml://registries/HuggingFace/models/org-model/versions/3",
+        },
+        "foundry": {
+            "instanceType": "model-h100",
+            "modelAssetId": MODEL,
+            "deploymentTemplateId": TEMPLATE,
+            "acceleratorType": "H100_80GB",
+        },
+    }.items():
+        monkeypatch.setattr(
+            f"hf_cloud.cli.{name}.choose_instance",
+            Mock(
+                return_value=NS(
+                    instance={**instance, "pricePerHourUsd": 1},
+                    estimate=NS(warnings=()),
+                )
+            ),
+        )
     return azure, foundry
 
 

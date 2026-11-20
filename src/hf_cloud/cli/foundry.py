@@ -11,6 +11,7 @@ from rich.table import Table
 from rich.text import Text
 
 from hf_cloud.cli.deploy_code import foundry_code
+from hf_cloud.cli.deployment_selection import announce_selection, choose_instance
 from hf_cloud.cli.estimate import provider_estimate
 from hf_cloud.core.exceptions import ConfigurationError, HFCloudError
 from hf_cloud.core.state import StateManager
@@ -40,11 +41,11 @@ def foundry_scope(
 
 
 @contextmanager
-def _errors():
+def _errors(*, stderr: bool = False):
     try:
         yield
     except (HFCloudError, OSError, ValueError) as error:
-        console.print(Text(f"Error: {error}", style="bold red"))
+        (Console(stderr=True) if stderr else console).print(Text(f"Error: {error}", style="bold red"))
         raise typer.Exit(code=1) from error
 
 
@@ -82,11 +83,12 @@ def deploy(
     template: Annotated[
         Optional[str],
         typer.Option(
-            "--template", help="Template name from foundry catalog, or a complete published asset URI"
+            "--template", help="Published template name or URI; omitted selects cheapest compatible estimate"
         ),
     ] = None,
     accelerator_type: Annotated[
-        Optional[str], typer.Option("--accelerator-type", help="A100_80GB, H100_80GB, H200_141GB, or MI300_192GB")
+        Optional[str],
+        typer.Option("--accelerator-type", help="A100_80GB, H100_80GB, H200_141GB, or MI300_192GB"),
     ] = None,
     profile: Annotated[
         Optional[Path],
@@ -127,7 +129,7 @@ def deploy(
         raise typer.BadParameter("Use --profile or explicit model/template/accelerator flags, not both")
     if catalog_version and model_asset_id:
         raise typer.BadParameter("Use --catalog-version with a Hub ID or pin --model-asset-id directly")
-    with _errors():
+    with _errors(stderr=print_code or dry_run):
         selected = load_profile(profile, model_id) if profile else {}
         config = {
             "model_asset_id": model_asset_id or selected.get("modelAssetId"),
@@ -139,6 +141,23 @@ def deploy(
         }
         provider = ctx.obj
         scope = provider.client.scope(name)
+        if not (profile or template or model_asset_id or model_id.startswith("azureml://")):
+            typer.echo("Estimating compatible Foundry templates...", err=True)
+            match = choose_instance(
+                model_id,
+                "foundry",
+                registry=provider.catalog,
+                catalog_version=catalog_version,
+                accelerator_type=accelerator_type,
+            )
+            announce_selection(match)
+            config.update(
+                {
+                    "model_asset_id": match.instance["modelAssetId"],
+                    "deployment_template": match.instance["deploymentTemplateId"],
+                    "accelerator_type": match.instance["acceleratorType"],
+                }
+            )
         config = provider.prepare_config(model_id, config)
         resource = provider.deployment_resource(model_id, config)
         if print_code:

@@ -112,6 +112,16 @@ def test_all_options_and_gpu_layout_are_forwarded(command):
     assert "--experimental" not in args and "--model-id" not in args
 
 
+def test_batch_token_is_forwarded_only_through_subprocess_environment(command, payload):
+    command.side_effect = lambda *args, **kwargs: subprocess.CompletedProcess([], 0, json.dumps([payload]), "")
+    run_hf_mem_batch(
+        "org/model", [(4, 24)], options=EstimateOptions(), gpu_memory_utilization=0.9, token="private-token"
+    )
+    assert command.call_args.kwargs["env"] == {"HF_TOKEN": "private-token"}
+    assert "private-token" not in str(command.call_args.args)
+    assert "private-token" not in command.call_args.kwargs["input_text"]
+
+
 @pytest.mark.parametrize("total", [None, -1, True, "100", float("nan"), float("inf"), 1.5, []])
 def test_invalid_total_is_rejected(command, payload, total):
     payload["total"] = total

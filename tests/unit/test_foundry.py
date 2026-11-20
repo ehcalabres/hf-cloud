@@ -401,7 +401,7 @@ def test_cli_hub_only_dry_run_resolves_assets_without_provisioning(provider, mon
     provider.catalog.resolve.return_value = PublishedModel("org/model", "azure-huggingface", "example", "1")
     provider.catalog.foundry_template.return_value = {**CONFIG, "accelerators_per_instance": 1}
     monkeypatch.setattr("hf_cloud.cli.foundry.FoundryProvider", Mock(return_value=provider))
-    result = CliRunner().invoke(app, ["foundry", *SCOPE, "deploy", "org/model", "--name", "test", "--dry-run"])
+    result = CliRunner().invoke(app, ["foundry", *SCOPE, "deploy", "org/model", "--name", "test", "--template", TEMPLATE, "--dry-run"])
     assert result.exit_code == 0, result.stdout
     data = json.loads(result.stdout)
     assert data["resource"]["properties"]["deploymentTemplate"] == TEMPLATE
