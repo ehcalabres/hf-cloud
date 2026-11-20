@@ -12,7 +12,7 @@ class CloudProvider(ABC):
 
     @abstractmethod
     def get_provider_name(self) -> str:
-        """Return the provider name (e.g., 'sagemaker', 'azure', 'vertex')."""
+        """Return the provider name (e.g., 'sagemaker', 'azureml', 'vertex')."""
         pass
 
     @abstractmethod

@@ -1,18 +1,26 @@
-
 """AWS SageMaker CLI commands."""
 
-from contextlib import nullcontext
+from pathlib import Path
 from typing import Annotated, Optional
 
 import typer
 from rich.console import Console
 from rich.table import Table
+from rich.text import Text
 
+from hf_cloud.cli.deploy_code import sagemaker_code
+from hf_cloud.cli.deployment_selection import announce_selection, choose_instance
+from hf_cloud.cli.environment import deployment_environment
+from hf_cloud.cli.estimate import provider_estimate
 from hf_cloud.core.config import Config
-from hf_cloud.core.exceptions import DeploymentNotFoundError, ProviderError
+from hf_cloud.core.deployment import DeploymentStatus
+from hf_cloud.core.exceptions import DeploymentError, DeploymentNotFoundError, HFCloudError, ProviderError
 from hf_cloud.core.state import StateManager
 from hf_cloud.providers.sagemaker import SageMakerProvider
-from hf_cloud.providers.sagemaker.utils import _decode_ansi_logs
+from hf_cloud.providers.sagemaker.client import SageMakerClient
+from hf_cloud.providers.sagemaker.utils import _decode_ansi_logs, get_serving_settings
+from hf_cloud.utils.hf_hub import get_model_task
+from hf_cloud.utils.sdk_versions import SdkUpdateCheck
 
 console = Console()
 sagemaker_app = typer.Typer(help="AWS SageMaker deployment management.")
@@ -24,7 +32,6 @@ def _get_provider_defaults() -> dict[str, Optional[str]]:
     provider_config = config.get_provider_config("sagemaker")
     return {
         "role": provider_config.get("default_role"),
-        "instance_type": provider_config.get("default_instance_type"),
     }
 
 
@@ -35,24 +42,97 @@ def deploy(
     ],
     deployment_name: Annotated[str, typer.Option("--name", "-n", help="Name for the deployment/endpoint")],
     instance_type: Annotated[
-        Optional[str], typer.Option("--instance-type", "-i", help="EC2 instance type (e.g., 'ml.g5.xlarge')")
+        Optional[str],
+        typer.Option("--instance-type", "-i", help="EC2 type; omitted selects cheapest compatible estimate"),
     ] = None,
     region: Annotated[Optional[str], typer.Option("--region", "-r", help="AWS region")] = None,
-    role: Annotated[Optional[str], typer.Option("--role", help="IAM role ARN for SageMaker")] = None,
+    role: Annotated[
+        Optional[str],
+        typer.Option("--role", help="SageMaker execution role ARN or name; overrides configured default"),
+    ] = None,
+    role_name: Annotated[
+        Optional[str],
+        typer.Option(
+            "--role-name", help="Execution role name to resolve through IAM; overrides configured default"
+        ),
+    ] = None,
     token: Annotated[
         Optional[str], typer.Option("--token", "-t", help="HuggingFace Hub token for private models")
     ] = None,
     instance_count: Annotated[int, typer.Option("--instance-count", "-c", help="Number of instances")] = 1,
+    tensor_parallel_size: Annotated[
+        Optional[int],
+        typer.Option(
+            "--tensor-parallel-size",
+            min=1,
+            help="vLLM GPUs per replica (defaults to the bundled instance GPU count, otherwise 1)",
+        ),
+    ] = None,
+    print_code: Annotated[
+        bool, typer.Option("--print-code", help="Print standalone Python SDK code without deploying")
+    ] = False,
+    env: Annotated[
+        Optional[list[str]], typer.Option("--env", help="Runtime KEY=VALUE; repeat to override defaults/files")
+    ] = None,
+    env_file: Annotated[
+        Optional[list[Path]], typer.Option("--env-file", help="UTF-8 KEY=VALUE file; repeat in merge order")
+    ] = None,
 ) -> None:
     """Deploy a HuggingFace model to AWS SageMaker."""
+    custom_env = deployment_environment(env, env_file)
+    if role is not None and role_name is not None:
+        raise typer.BadParameter("Use either --role or --role-name, not both", param_hint="--role-name")
+    if role_name is not None and (role_name.startswith("arn:") or "/" in role_name):
+        raise typer.BadParameter(
+            "Provide a role name without a path; use --role for an ARN", param_hint="--role-name"
+        )
     # Load provider configuration defaults
     defaults = _get_provider_defaults()
 
-    # Use provided values or fall back to config defaults, then hardcoded defaults
-    effective_role = role or defaults.get("role")
-    effective_instance_type = instance_type or defaults.get("instance_type") or "ml.g5.xlarge"
+    # Role defaults remain configured; hardware is selected per model below.
+    effective_role = role_name if role_name is not None else role if role is not None else defaults.get("role")
+    if instance_count < 1:
+        raise typer.BadParameter("Instance count must be positive", param_hint="--instance-count")
+    effective_instance_type = instance_type
+    if effective_instance_type is None:
+        typer.echo("Estimating compatible SageMaker instances...", err=True)
+        try:
+            match = choose_instance(
+                model_id,
+                "sagemaker",
+                token=token,
+                tensor_parallel_size=tensor_parallel_size,
+            )
+        except HFCloudError as error:
+            typer.echo(
+                f"Error selecting an instance: {error}. Use --instance-type to select explicitly.", err=True
+            )
+            raise typer.Exit(code=1) from error
+        announce_selection(match)
+        effective_instance_type = match.instance["instanceType"]
+    try:
+        get_serving_settings(effective_instance_type, tensor_parallel_size)
+    except ValueError as error:
+        raise typer.BadParameter(str(error), param_hint="--tensor-parallel-size") from error
+
+    if print_code:
+        typer.echo(
+            sagemaker_code(
+                model_id,
+                deployment_name,
+                effective_instance_type,
+                instance_count,
+                SageMakerClient.resolve_region(region),
+                effective_role,
+                custom_env.get("HF_TASK") or get_model_task(model_id, token),
+                tensor_parallel_size,
+                custom_env,
+            )
+        )
+        return
 
     console.print(f"[bold blue]Deploying {model_id} to AWS SageMaker...[/bold blue]")
+    update_check = SdkUpdateCheck("sagemaker")
 
     try:
         provider = SageMakerProvider(region=region)
@@ -62,6 +142,8 @@ def deploy(
             "region": provider.client.region,
             "role": effective_role,
             "instance_count": instance_count,
+            "tensor_parallel_size": tensor_parallel_size,
+            "environment_variables": custom_env,
         }
 
         deployment = provider.deploy(
@@ -70,13 +152,18 @@ def deploy(
             config=config,
             token=token,
         )
+        if deployment.status != DeploymentStatus.RUNNING:
+            raise DeploymentError(
+                f"Endpoint deployment returned status '{deployment.status.value}'",
+                deployment_id=deployment.deployment_id,
+            )
 
         # Save to local state
         state = StateManager()
         state.add_deployment(deployment)
 
         console.print()
-        console.print("[bold green]Deployment initiated successfully![/bold green]")
+        console.print("[bold green]Deployment completed successfully![/bold green]")
         console.print()
         console.print(f"  [cyan]Deployment ID:[/cyan] {deployment.deployment_id}")
         console.print(f"  [cyan]Status:[/cyan] {deployment.status.value}")
@@ -84,15 +171,19 @@ def deploy(
         console.print(f"  [cyan]Instance Type:[/cyan] {deployment.instance_type}")
         console.print(f"  [cyan]Instance Count:[/cyan] {deployment.instance_count}")
         console.print()
-        console.print("[dim]Note: Endpoint creation may take 5-10 minutes. Check status with:[/dim]")
-        console.print(f"[dim]  hf-cloud sagemaker status {deployment.deployment_id} --region {deployment.region}[/dim]")
+        console.print("[dim]Check status with:[/dim]")
+        console.print(
+            f"[dim]  hf-cloud sagemaker status {deployment.deployment_id} --region {deployment.region}[/dim]"
+        )
 
-    except ProviderError as e:
-        console.print(f"[bold red]Error:[/bold red] {e}")
+    except (ProviderError, DeploymentError) as e:
+        console.print(Text(f"Error: {e}", style="bold red"))
         raise typer.Exit(code=1)
     except Exception as e:
-        console.print(f"[bold red]Deployment failed:[/bold red] {e}")
+        console.print(Text(f"Deployment failed: {e}", style="bold red"))
         raise typer.Exit(code=1)
+    finally:
+        update_check.notify(console)
 
 
 @sagemaker_app.command(name="ls")
@@ -277,17 +368,42 @@ def invoke(
     input_text: Annotated[str, typer.Option("--input", "-i", help="Input text for inference")],
     max_new_tokens: Annotated[int, typer.Option("--max-tokens", help="Maximum tokens to generate")] = 100,
     region: Annotated[Optional[str], typer.Option("--region", "-r", help="AWS region")] = None,
+    api: Annotated[
+        str, typer.Option("--api", help="Request format: auto (use saved deployment), vllm, or huggingface")
+    ] = "auto",
 ) -> None:
     """Test inference on the deployment."""
+    if api not in ("auto", "vllm", "huggingface"):
+        raise typer.BadParameter("Choose auto, vllm, or huggingface", param_hint="--api")
     try:
         provider = SageMakerProvider(region=region)
+        saved = (
+            StateManager().get_deployment(
+                deployment_id,
+                provider="sagemaker",
+                region=provider.client.region,
+            )
+            or {}
+        )
+        if api == "auto" and not saved.get("config", {}).get("model_server"):
+            try:
+                saved = provider.get_deployment(deployment_id).to_dict()
+            except ProviderError:
+                pass  # An explicit --api still works without describe permissions.
+        use_vllm = api == "vllm" or (api == "auto" and saved.get("config", {}).get("model_server") == "vllm")
 
-        payload = {
-            "inputs": input_text,
-            "parameters": {
-                "max_new_tokens": max_new_tokens,
-            },
-        }
+        payload = (
+            {"prompt": input_text, "max_tokens": max_new_tokens}
+            if use_vllm
+            else {
+                "inputs": input_text,
+                "parameters": {
+                    "max_new_tokens": max_new_tokens,
+                },
+            }
+        )
+        if use_vllm and saved.get("model_id") not in (None, "unknown"):
+            payload["model"] = saved["model_id"]
 
         console.print(f"[dim]Invoking endpoint {deployment_id}...[/dim]")
         result = provider.invoke(deployment_id, payload)
@@ -304,162 +420,5 @@ def invoke(
         raise typer.Exit(code=1)
 
 
-@sagemaker_app.command(name="estimate")
-def estimate(
-    model_id: Annotated[
-        str, typer.Argument(help="HuggingFace model ID (e.g., 'gpt2', 'meta-llama/Llama-2-7b-hf')")
-    ],
-    safety_margin: Annotated[
-        Optional[float],
-        typer.Option("--safety-margin", "-s", help="Fraction of VRAM to keep free (e.g., 0.1 for 10%)"),
-    ] = None,
-    show_all: Annotated[bool, typer.Option("--all", "-a", help="Show all compatible instances")] = False,
-    json_output: Annotated[bool, typer.Option("--json", "-j", help="Output results as JSON")] = False,
-) -> None:
-    """Estimate the minimum viable SageMaker instance for a model.
-
-    Uses hf-mem to calculate VRAM requirements and matches against
-    available SageMaker instance types.
-    """
-    import json
-
-    from hf_cloud.utils.hf_mem import (
-        HfMemError,
-        _get_total_vram,
-        find_compatible_instances,
-        find_minimum_instance,
-        load_instance_data,
-        run_hf_mem,
-    )
-
-    def _build_instance_output(inst: dict, required_vram: float) -> dict:
-        """Build output dict for an instance."""
-        total_vram = _get_total_vram(inst)
-        usage_pct = (required_vram / total_vram) * 100 if total_vram > 0 else 0
-        vram_left = total_vram - required_vram
-        return {
-            "instanceType": inst.get("instanceType"),
-            "numGpu": inst.get("numGpu"),
-            "gpuMemGbPerGpu": inst.get("gpuMemGbPerGpu"),
-            "totalVramGb": total_vram,
-            "usagePercent": round(usage_pct, 1),
-            "vramLeftGb": round(vram_left, 1),
-            "pricePerHourUsd": inst.get("pricePerHourUsd"),
-        }
-
-    try:
-        if not json_output:
-            console.print(f"[bold blue]Estimating instance for {model_id}...[/bold blue]")
-
-        # Run hf-mem estimation
-        with console.status("Running hf-mem estimation...") if not json_output else nullcontext():
-            estimate_result = run_hf_mem(model_id)
-
-        # Load instance data
-        instance_data = load_instance_data("sagemaker")
-        effective_margin = safety_margin if safety_margin is not None else instance_data.safety_margin_default
-
-        if not json_output:
-            console.print(f"  [cyan]Model:[/cyan] {model_id}")
-            console.print(f"  [cyan]Required VRAM:[/cyan] {estimate_result.required_vram_gb:.2f} GB")
-            console.print(f"  [cyan]Safety margin:[/cyan] {int(effective_margin * 100)}%")
-            console.print()
-
-        if show_all:
-            # Show all compatible instances
-            compatible = find_compatible_instances(
-                estimate_result.required_vram_gb, instance_data.instances, effective_margin
-            )
-
-            if not compatible:
-                if json_output:
-                    print(json.dumps({"error": "No compatible instances found", "instances": []}))
-                else:
-                    console.print("[bold red]No compatible instances found.[/bold red]")
-                raise typer.Exit(code=1)
-
-            if json_output:
-                output = {
-                    "modelId": model_id,
-                    "requiredVramGb": round(estimate_result.required_vram_gb, 2),
-                    "safetyMargin": effective_margin,
-                    "instances": [
-                        _build_instance_output(inst, estimate_result.required_vram_gb)
-                        for inst in compatible
-                    ],
-                }
-                print(json.dumps(output, indent=2))
-            else:
-                table = Table(title="Compatible SageMaker Instances")
-                table.add_column("Instance Type", style="cyan")
-                table.add_column("GPUs", justify="right")
-                table.add_column("GPU Mem (GB)", justify="right")
-                table.add_column("Total VRAM (GB)", justify="right")
-                table.add_column("Usage %", justify="right")
-                table.add_column("VRAM Left (GB)", justify="right")
-                table.add_column("Price/Hour", justify="right")
-
-                for inst in compatible:
-                    total_vram = _get_total_vram(inst)
-                    usage_pct = (estimate_result.required_vram_gb / total_vram) * 100 if total_vram > 0 else 0
-                    vram_left = total_vram - estimate_result.required_vram_gb
-                    table.add_row(
-                        inst.get("instanceType", "N/A"),
-                        str(inst.get("numGpu", "N/A")),
-                        str(inst.get("gpuMemGbPerGpu", "N/A")),
-                        f"{total_vram:.0f}",
-                        f"{usage_pct:.1f}%",
-                        f"{vram_left:.1f}",
-                        f"${inst.get('pricePerHourUsd', 0):.2f}",
-                    )
-
-                console.print(table)
-        else:
-            # Show only minimum instance
-            minimum = find_minimum_instance(
-                estimate_result.required_vram_gb, instance_data.instances, effective_margin
-            )
-
-            if minimum is None:
-                if json_output:
-                    print(json.dumps({"error": "No suitable instance found", "instance": None}))
-                else:
-                    console.print("[bold red]No suitable instance found.[/bold red]")
-                    console.print("[dim]Model requires more VRAM than any available instance.[/dim]")
-                raise typer.Exit(code=1)
-
-            if json_output:
-                output = {
-                    "modelId": model_id,
-                    "requiredVramGb": round(estimate_result.required_vram_gb, 2),
-                    "safetyMargin": effective_margin,
-                    "instance": _build_instance_output(minimum, estimate_result.required_vram_gb),
-                }
-                print(json.dumps(output, indent=2))
-            else:
-                total_vram = _get_total_vram(minimum)
-                usage_pct = (estimate_result.required_vram_gb / total_vram) * 100 if total_vram > 0 else 0
-                vram_left = total_vram - estimate_result.required_vram_gb
-                console.print("[bold green]Recommended Instance:[/bold green]")
-                console.print(f"  [cyan]Instance Type:[/cyan] {minimum.get('instanceType')}")
-                console.print(
-                    f"  [cyan]GPUs:[/cyan] {minimum.get('numGpu')}x {minimum.get('gpuMemGbPerGpu')} GB"
-                )
-                console.print(f"  [cyan]Total VRAM:[/cyan] {total_vram:.0f} GB")
-                console.print(f"  [cyan]Usage:[/cyan] {usage_pct:.1f}% ({vram_left:.1f} GB left)")
-                console.print(f"  [cyan]Price/Hour:[/cyan] ${minimum.get('pricePerHourUsd', 0):.2f}")
-                console.print()
-                console.print("[dim]Deploy with:[/dim]")
-                console.print(
-                    f"[dim]  hf-cloud sagemaker deploy {model_id} --name <name> "
-                    f"--instance-type {minimum.get('instanceType')}[/dim]"
-                )
-
-    except HfMemError as e:
-        if json_output:
-            print(json.dumps({"error": e.message, "details": e.details}))
-        else:
-            console.print(f"[bold red]Error:[/bold red] {e.message}")
-            if e.details:
-                console.print(f"[dim]{e.details}[/dim]")
-        raise typer.Exit(code=1)
+# Keep the provider spelling as a shortcut to the canonical estimate command.
+sagemaker_app.command(name="estimate")(provider_estimate("sagemaker"))

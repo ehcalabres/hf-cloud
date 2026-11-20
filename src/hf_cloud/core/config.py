@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from hf_cloud.core.exceptions import ConfigurationError
+from hf_cloud.core.storage import write_json_atomic
 
 
 class Config:
@@ -45,8 +46,7 @@ class Config:
 
     def _save_config(self) -> None:
         """Save configuration to file."""
-        with open(self.config_file, "w") as f:
-            json.dump(self._config, f, indent=2)
+        write_json_atomic(self.config_file, self._config)
 
     def get_provider_config(self, provider: str) -> dict[str, Any]:
         """Get configuration for a specific provider.

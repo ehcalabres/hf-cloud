@@ -1,0 +1,36 @@
+{
+  "version": "hf-mem@1.0.0",
+  "model": "org/synthetic-model",
+  "revision": null,
+  "file": "model.onnx",
+  "format": "onnx",
+  "total": 128000,
+  "weights": {
+    "bytes": 128000,
+    "params": 64000,
+    "dtypes": {
+      "F16": {
+        "bytes": 128000,
+        "params": 64000
+      }
+    }
+  },
+  "offloaded": null,
+  "components": null,
+  "kv_cache": null,
+  "overhead": null,
+  "moe": null,
+  "fit": {
+    "gpu_memory": 25769803776,
+    "usable": 23708219473,
+    "required": 128000,
+    "gpus": 1,
+    "needed": 1,
+    "fits": true,
+    "max_model_len": 0
+  },
+  "warnings": [
+    "KV cache estimation skipped for `model.onnx`, as no context length was found in `config.json`; set `--max-model-len`.",
+    "The ONNX Runtime overhead (activations and workspaces) is not estimated."
+  ]
+}

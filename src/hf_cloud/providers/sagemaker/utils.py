@@ -1,6 +1,6 @@
-
 """SageMaker utility functions."""
 
+import json
 import re
 import time
 from typing import TYPE_CHECKING, Any, Optional
@@ -8,9 +8,28 @@ from typing import TYPE_CHECKING, Any, Optional
 from huggingface_hub import model_info
 
 from hf_cloud.core.exceptions import ProviderError
+from hf_cloud.utils.environment import merge_environment
+from hf_cloud.utils.hf_mem import load_instance_data
 
 if TYPE_CHECKING:
-    from sagemaker.serve.model_builder import SchemaBuilder
+    from sagemaker.serve.builder.schema_builder import SchemaBuilder
+
+
+def get_serving_settings(instance_type: str, tensor_parallel_size: Optional[int] = None) -> dict[str, int]:
+    """Use the bundled GPU layout and startup allowance for both deploy paths."""
+    instance = next(
+        (item for item in load_instance_data("sagemaker").instances if item["instanceType"] == instance_type),
+        {},
+    )
+    if tensor_parallel_size is not None:
+        if type(tensor_parallel_size) is not int or tensor_parallel_size < 1:
+            raise ValueError("Tensor parallel size must be a positive integer")
+        if instance and tensor_parallel_size > instance["numGpu"]:
+            raise ValueError(f"Tensor parallel size exceeds the {instance['numGpu']} GPUs on {instance_type}")
+    return {
+        "tensor_parallel_size": tensor_parallel_size or instance.get("numGpu", 1),
+        "container_timeout_in_seconds": instance.get("startupTimeoutSeconds", 900),
+    }
 
 
 def get_schema_builder_from_model(model_id: str, task: str) -> "SchemaBuilder":
@@ -24,20 +43,27 @@ def get_schema_builder_from_model(model_id: str, task: str) -> "SchemaBuilder":
         SchemaBuilder instance
     """
     try:
-        from sagemaker.serve.model_builder import SchemaBuilder
+        from sagemaker.serve.builder.schema_builder import SchemaBuilder
     except ImportError:
         raise ProviderError(
             "sagemaker",
             "SageMaker SDK is not installed. Install with: pip install --upgrade hf-cloud",
         )
 
+    return SchemaBuilder(**get_schema_samples(task, model_id))
+
+
+def get_schema_samples(task: str, model_id: str) -> dict[str, Any]:
+    """Sample payloads shared by ModelBuilder deployment and standalone code generation."""
     # Define sample inputs/outputs based on task
     task_schemas = {
         "text-generation": {
-            "sample_input": {"inputs": "Hello, I'm a language model,", "parameters": {"max_new_tokens": 10}},
-            "sample_output": [
-                {"generated_text": "Hello, I'm a language model, and I can help you with a variety of tasks."}
-            ],
+            "sample_input": {
+                "model": model_id,
+                "prompt": "Hi, what can you help me with?",
+                "max_tokens": 256,
+            },
+            "sample_output": {"choices": [{"text": "Generated text."}]},
         },
         "text2text-generation": {
             "sample_input": {"inputs": "Translate to French: Hello, how are you?"},
@@ -83,10 +109,7 @@ def get_schema_builder_from_model(model_id: str, task: str) -> "SchemaBuilder":
     # Get schema for task, default to text-generation
     schema = task_schemas.get(task, task_schemas["text-generation"])
 
-    return SchemaBuilder(
-        sample_input=schema["sample_input"],
-        sample_output=schema["sample_output"],
-    )
+    return schema
 
 
 def get_sagemaker_endpoint_name(model_id: str) -> str:
@@ -108,7 +131,13 @@ def get_sagemaker_endpoint_name(model_id: str) -> str:
     return sanitize_endpoint_name(name)
 
 
-def get_sagemaker_env_vars(model_id: str, token: Optional[str] = None, task: Optional[str] = None) -> dict[str, str]:
+def get_sagemaker_env_vars(
+    model_id: str,
+    token: Optional[str] = None,
+    task: Optional[str] = None,
+    tensor_parallel_size: int = 1,
+    environment_variables: Optional[dict[str, str]] = None,
+) -> dict[str, str]:
     """Get environment variables for SageMaker deployment.
 
     Args:
@@ -122,6 +151,11 @@ def get_sagemaker_env_vars(model_id: str, token: Optional[str] = None, task: Opt
     env_vars = {
         "HF_MODEL_ID": model_id,
     }
+    if task == "text-generation":
+        env_vars = {
+            "SM_VLLM_MODEL": model_id,
+            "SM_VLLM_TENSOR_PARALLEL_SIZE": json.dumps(tensor_parallel_size),
+        }
 
     if token:
         env_vars["HF_TOKEN"] = token
@@ -129,7 +163,7 @@ def get_sagemaker_env_vars(model_id: str, token: Optional[str] = None, task: Opt
     if task:
         env_vars["HF_TASK"] = task
 
-    return env_vars
+    return merge_environment(env_vars, environment_variables)
 
 
 def sanitize_endpoint_name(name: str) -> str:

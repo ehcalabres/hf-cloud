@@ -2,10 +2,12 @@
 """State management for HF-Cloud deployments."""
 
 import json
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, Optional
 
 from hf_cloud.core.deployment import Deployment
+from hf_cloud.core.storage import write_json_atomic
 
 
 class StateManager:
@@ -49,8 +51,7 @@ class StateManager:
 
     def _save_state(self) -> None:
         """Save state to file."""
-        with open(self.state_file, "w") as f:
-            json.dump(self._state, f, indent=2)
+        write_json_atomic(self.state_file, self._state)
 
     @staticmethod
     def _deployment_key(deployment_id: str, provider: str, region: Optional[str]) -> str:
@@ -63,8 +64,17 @@ class StateManager:
         Args:
             deployment: Deployment object to store
         """
-        key = self._deployment_key(deployment.deployment_id, deployment.provider, deployment.region)
-        self._state["deployments"][key] = deployment.to_dict()
+        self.add_deployments([deployment])
+
+    def add_deployments(self, deployments: Iterable[Deployment]) -> None:
+        """Add or update a batch, persisting once and retaining other deployments."""
+        updates = {}
+        for deployment in deployments:
+            key = self._deployment_key(deployment.deployment_id, deployment.provider, deployment.region)
+            updates[key] = deployment.to_dict()
+        if not updates:
+            return
+        self._state["deployments"].update(updates)
         self._save_state()
 
     def get_deployment(

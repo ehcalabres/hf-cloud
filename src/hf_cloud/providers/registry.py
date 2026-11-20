@@ -12,7 +12,7 @@ class ProviderRegistry:
     """Central registry for cloud providers."""
 
     _providers: dict[str, "CloudProvider"] = {}
-    _available_providers: set[str] = {"sagemaker", "azure", "vertex"}
+    _available_providers: set[str] = {"sagemaker", "vertex", "azureml", "foundry"}
 
     @classmethod
     def register_provider(cls, name: str, provider: "CloudProvider") -> None:
@@ -88,13 +88,14 @@ class ProviderRegistry:
                 cls._providers[name] = SageMakerProvider()
             except ImportError as e:
                 raise ProviderNotFoundError(name) from e
-        elif name == "azure":
-            try:
-                from hf_cloud.providers.azure import AzureProvider
+        elif name == "azureml":
+            from hf_cloud.providers.azureml import AzureMLProvider
 
-                cls._providers[name] = AzureProvider()
-            except ImportError as e:
-                raise ProviderNotFoundError(name) from e
+            cls._providers[name] = AzureMLProvider()
+        elif name == "foundry":
+            from hf_cloud.providers.foundry import FoundryProvider
+
+            cls._providers[name] = FoundryProvider()
         elif name == "vertex":
             try:
                 from hf_cloud.providers.vertex import VertexProvider

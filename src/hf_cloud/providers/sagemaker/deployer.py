@@ -1,4 +1,3 @@
-
 """SageMaker deployment operations using ModelBuilder."""
 
 from datetime import datetime
@@ -7,12 +6,13 @@ from typing import Any, Optional
 from rich.console import Console
 
 from hf_cloud.core.deployment import Deployment, DeploymentStatus
-from hf_cloud.core.exceptions import DeploymentError
+from hf_cloud.core.exceptions import DeploymentError, ProviderError
 from hf_cloud.providers.sagemaker.client import SageMakerClient
 from hf_cloud.providers.sagemaker.utils import (
     get_sagemaker_endpoint_name,
     get_sagemaker_env_vars,
     get_schema_builder_from_model,
+    get_serving_settings,
     sanitize_endpoint_name,
 )
 from hf_cloud.utils.hf_hub import get_model_task
@@ -74,16 +74,21 @@ class SageMakerDeployer:
         )
 
         try:
+            settings = get_serving_settings(instance_type, config.get("tensor_parallel_size"))
+            # Resolve role and validate trust before SDK initialization or model work.
+            role_arn = self.client.get_execution_role(role_name=role)
+
             # Import ModelBuilder here to avoid import errors when SDK not installed
-            from sagemaker.serve.model_builder import ModelBuilder
+            from sagemaker.serve import ModelBuilder, ModelServer
 
             # Get SageMaker session and role
             session = self.client.get_sagemaker_session()
-            role_arn = self.client.get_execution_role(role_name=role)
 
             # Get model task and schema builder
-            task = get_model_task(model_id=model_id, token=token)
+            custom_env = config.get("environment_variables") or {}
+            task = custom_env.get("HF_TASK") or get_model_task(model_id=model_id, token=token)
             schema_builder = get_schema_builder_from_model(model_id=model_id, task=task)
+            server_kwargs = {"model_server": ModelServer.VLLM} if task == "text-generation" else {}
 
             console.print(
                 f"[green]Deploying model '{model_id}' to SageMaker endpoint '{endpoint_name}' in region '{region}'[/green]"
@@ -100,7 +105,15 @@ class SageMakerDeployer:
                 sagemaker_session=session,
                 instance_type=instance_type,
                 schema_builder=schema_builder,
-                env_vars=get_sagemaker_env_vars(model_id=model_id, token=token, task=task),
+                env_vars=get_sagemaker_env_vars(
+                    model_id=model_id,
+                    token=token,
+                    task=task,
+                    tensor_parallel_size=settings["tensor_parallel_size"],
+                    environment_variables=custom_env,
+                ),
+                model_metadata={"HF_TASK": custom_env.get("HF_TASK", task)},
+                **server_kwargs,
             )
 
             # Build the model
@@ -114,7 +127,28 @@ class SageMakerDeployer:
             model_builder.deploy(
                 endpoint_name=endpoint_name,
                 initial_instance_count=instance_count,
+                instance_type=instance_type,
+                container_timeout_in_seconds=settings["container_timeout_in_seconds"],
+                wait=True,
             )
+
+            # Some SDK versions only log a failed deployment and still return.
+            # Confirm readiness with AWS instead of trusting that return value.
+            try:
+                endpoint = self.client.sagemaker.describe_endpoint(EndpointName=endpoint_name)
+            except Exception as error:
+                raise DeploymentError(
+                    "Unable to verify SageMaker endpoint status",
+                    deployment_id=endpoint_name,
+                    details=str(error),
+                ) from error
+            endpoint_status = endpoint.get("EndpointStatus", "Unknown")
+            if endpoint_status != "InService":
+                raise DeploymentError(
+                    f"SageMaker endpoint did not become ready (status: {endpoint_status})",
+                    deployment_id=endpoint_name,
+                    details=endpoint.get("FailureReason") or "No failure reason returned by SageMaker",
+                )
 
             console.print(f"[green]Model deployed successfully to endpoint '{endpoint_name}'.[/green]")
 
@@ -124,8 +158,13 @@ class SageMakerDeployer:
                 deployment_name=deployment_name or endpoint_name,
                 provider="sagemaker",
                 model_id=model_id,
-                status=DeploymentStatus.CREATING,
-                config=config,
+                status=DeploymentStatus.RUNNING,
+                config={
+                    **{key: value for key, value in config.items() if key != "environment_variables"},
+                    **settings,
+                    "task": task,
+                    "model_server": "vllm" if task == "text-generation" else "auto",
+                },
                 endpoint_url=f"https://runtime.sagemaker.{region}.amazonaws.com/endpoints/{endpoint_name}/invocations",
                 region=region,
                 instance_type=instance_type,
@@ -136,6 +175,8 @@ class SageMakerDeployer:
 
             return deployment
 
+        except (DeploymentError, ProviderError):
+            raise
         except ImportError:
             raise DeploymentError(
                 "SageMaker SDK is not installed",

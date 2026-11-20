@@ -1,12 +1,15 @@
-
 """AWS SageMaker client wrapper."""
 
+import os
+import re
 from typing import Any, Optional
 
 from rich.console import Console
+from rich.text import Text
 
 from hf_cloud.core.config import Config
 from hf_cloud.core.exceptions import AuthenticationError, ProviderError
+from hf_cloud.providers.sagemaker.roles import validate_role_trust
 
 console = Console()
 
@@ -134,64 +137,65 @@ class SageMakerClient:
             raise ProviderError("sagemaker", f"Failed to verify credentials: {e}")
 
     def get_execution_role(self, role_name: Optional[str] = None) -> str:
-        """Get SageMaker execution role ARN.
-
-        Args:
-            role_name: Optional explicit role ARN or name
-
-        Returns:
-            Role ARN
-
-        Raises:
-            ProviderError: If role cannot be determined
-        """
-        # If a full ARN is provided, return it
-        if role_name and role_name.startswith("arn:aws:iam::"):
-            return role_name
-
-        if role_name:
-            # Try to find a SageMaker role by name or search for one
-            try:
-                iam = self.iam
-
-                # If a role name was provided, try to get it
-                if role_name:
-                    try:
-                        role_arn = iam.get_role(RoleName=role_name)["Role"]["Arn"]
-                        console.print(f"[green]Using IAM role: {role_arn}[/green]")
-                        return role_arn
-                    except Exception:
-                        pass
-            except Exception:
-                pass
-        else:
-            # Try to get role from SageMaker SDK (works in SageMaker notebooks)
+        """Resolve and inspect an explicit, configured, or SDK-discovered execution role."""
+        role_name = role_name or os.environ.get("SAGEMAKER_ROLE_ARN")
+        if role_name is None:
             try:
                 from sagemaker.core.helper.session_helper import get_execution_role
 
-                role = get_execution_role(sagemaker_session=self.get_sagemaker_session())
-                console.print(f"[green]Using SageMaker execution role: {role}[/green]")
-                return role
-            except Exception:
-                pass
+                try:
+                    role_name = get_execution_role(sagemaker_session=self.get_sagemaker_session())
+                except ValueError:
+                    role_name = "sagemaker_execution_role"
+            except Exception as error:
+                raise ProviderError(
+                    "sagemaker",
+                    "Could not determine SageMaker execution role",
+                    details="Provide --role-name NAME or --role ARN, or configure a default execution role",
+                ) from error
+        return self.validate_execution_role(role_name)
 
-            # Try to find a SageMaker role by name or search for one
-            try:
-                iam = self.iam
-
-                # If a role name was provided, try to get it
-                if role_name:
-                    try:
-                        role_arn = iam.get_role(RoleName=role_name)["Role"]["Arn"]
-                        console.print(f"[green]Using IAM role: {role_arn}[/green]")
-                        return role_arn
-                    except Exception:
-                        pass
-            except Exception:
-                pass
-
-        raise ProviderError(
-            "sagemaker",
-            "Could not determine SageMaker execution role",
-            details="Provide --role with an ARN or role name, or ensure a SageMaker execution role exists",
-        )
+    def validate_execution_role(self, identifier: str) -> str:
+        """Fetch IAM role metadata and reject invalid service trust before resource creation."""
+        if not isinstance(identifier, str) or not identifier:
+            raise ProviderError("sagemaker", "Execution role is empty; provide --role-name NAME or --role ARN")
+        expected_arn = None
+        if identifier.startswith("arn:"):
+            if not re.fullmatch(r"arn:[^:]+:iam::\d{12}:role/.+", identifier):
+                raise ProviderError("sagemaker", "Invalid execution role ARN", details=identifier)
+            expected_arn = identifier
+            name = identifier.rsplit("/", 1)[-1]
+        else:
+            name = identifier
+        if not re.fullmatch(r"[\w+=,.@-]{1,64}", name, flags=re.ASCII):
+            raise ProviderError(
+                "sagemaker",
+                "Invalid execution role name",
+                details="Use a role name without its path, or pass the full ARN with --role",
+            )
+        try:
+            role = self.iam.get_role(RoleName=name)["Role"]
+        except Exception as error:
+            code = getattr(error, "response", {}).get("Error", {}).get("Code", "")
+            if code == "NoSuchEntity":
+                message = f"Execution role '{name}' does not exist in the current AWS account"
+            elif code in {"AccessDenied", "AccessDeniedException", "UnauthorizedOperation"}:
+                message = f"Cannot validate execution role '{name}': iam:GetRole permission is required"
+            else:
+                message = f"Cannot load execution role '{name}' from IAM"
+            raise ProviderError("sagemaker", message, details=str(error)) from error
+        if expected_arn and role["Arn"] != expected_arn:
+            raise ProviderError(
+                "sagemaker",
+                "Execution role ARN does not match the role in the current AWS account",
+                details=f"Requested {expected_arn}; IAM returned {role['Arn']}",
+            )
+        confirmed = validate_role_trust(role, self.region)
+        if not confirmed:
+            console.print(
+                Text(
+                    "Execution role trust has conditions that require deployment context; AWS will evaluate them during deployment.",
+                    style="yellow",
+                )
+            )
+        return role["Arn"]

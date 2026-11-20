@@ -50,25 +50,130 @@ Standalone fallback:
 1. Configure provider defaults:
    - `hf cloud providers configure sagemaker`
    - `hf cloud providers configure vertex`
-2. Estimate minimum viable instances before deployment:
-   - `hf cloud sagemaker estimate MODEL_ID`
-   - `hf cloud vertex estimate MODEL_ID`
+   - `hf cloud providers configure azureml`
+   - `hf cloud providers configure foundry` (install `hf-cloud[foundry]` first)
+2. Check Microsoft model availability and compare prices before deployment:
+   - `hf cloud catalog MODEL_ID`
+   - `hf cloud catalog MODEL_ID --json`
+   - `hf cloud estimate MODEL_ID`
+   - `hf cloud estimate MODEL_ID --provider sagemaker`
+   - `hf cloud estimate MODEL_ID --provider vertex`
+   - `hf cloud estimate MODEL_ID --provider azureml`
+   - `hf cloud estimate MODEL_ID --provider azureml --hours 24 --instance-count 2`
+   - `hf cloud foundry estimate MODEL_ID`
+   - `hf cloud foundry estimate MODEL_ID --profile PROFILE.json` (optional override)
 3. Deploy a model:
+   - Omit hardware flags to choose the cheapest priced compatible estimate within
+     the provider (default workload, 10% memory reserve). This also applies to
+     `--print-code` and Microsoft `--dry-run`. Selection messages go to stderr.
+   - Explicit SageMaker/Azure ML `--instance-type`, Vertex `--machine-type`, or
+     Foundry `--template`/`--profile` skips automatic hardware selection. Old
+     configured hardware defaults are ignored; no-fit/estimate errors stop deploy.
    - `hf cloud sagemaker deploy MODEL_ID --name NAME`
+   - SageMaker text generation uses the Hub's ModelBuilder/VLLM recipe. GPUs per
+     replica default to the bundled instance GPU count (otherwise 1); override
+     with `--tensor-parallel-size N`. `--instance-count` controls replicas.
    - `hf cloud vertex deploy MODEL_ID --name NAME`
+   - Add `--print-code` to any provider's deploy command to emit standalone Python
+     SDK code without deploying, e.g. `hf cloud sagemaker deploy MODEL_ID --name NAME --print-code > deploy.py`.
+   - SageMaker, Vertex and Azure ML support repeatable `--env KEY=VALUE` and
+     `--env-file PATH` for deploy and printed code (also Azure ML dry-run/export).
+     Generated defaults < files in order < explicit env values in order; last wins.
+     Files are literal UTF-8 KEY=VALUE with quotes/comments, without interpolation
+     or shell execution. Custom values appear in code/exports but are omitted from
+     local state. Foundry managed compute has no runtime env override API.
+   - Environment overrides do not adjust automatic memory estimates; estimate a
+     matching workload and select hardware explicitly when changing memory settings.
+   - `hf cloud azureml deploy MODEL_ID --name NAME --dry-run --export-dir ./azure-deployment`
+   - Remove `--dry-run` after reviewing the plan to provision an Azure ML endpoint.
+   - `hf cloud foundry deploy MODEL_ID --name NAME --dry-run`
+   - Remove `--dry-run` to deploy a compatible published Foundry model/template.
 4. Verify and test:
    - `hf cloud sagemaker status DEPLOYMENT_ID`
    - `hf cloud vertex status DEPLOYMENT_ID`
+   - `hf cloud azureml status DEPLOYMENT_ID`
+   - `hf cloud azureml invoke DEPLOYMENT_ID --input "Hello"`
+   - `hf cloud foundry status DEPLOYMENT_ID`
    - `hf cloud sagemaker invoke DEPLOYMENT_ID --input "Hello"`
+   - SageMaker invoke detects vLLM from saved state or endpoint model environment.
+     Use `--api vllm` or `--api huggingface` to select the request format explicitly.
 5. Clean up:
    - `hf cloud sagemaker delete DEPLOYMENT_ID`
    - `hf cloud vertex delete DEPLOYMENT_ID`
+   - `hf cloud azureml delete DEPLOYMENT_ID`
+   - `hf cloud foundry delete DEPLOYMENT_ID`
 
 ## Useful commands
 - `hf cloud ls`
 - `hf cloud providers ls`
 - `hf cloud sagemaker ls`
 - `hf cloud vertex ls`
+- `hf cloud azureml ls`
+- `hf cloud foundry ls`
+
+Microsoft paths deploy published catalog assets; HF Cloud does not build images.
+- `azureml` uses an Azure ML workspace or a Foundry classic hub-based project.
+  Run `hf cloud azureml catalog MODEL_ID` to verify publication. Deploy pins the
+  resolved version; `--catalog-version` chooses a specific published version.
+  `--dry-run --export-dir PATH` exports Azure CLI endpoint/deployment definitions.
+  The published model owns the runtime and scoring schema. `--json-file` passes
+  that schema unchanged. `--hf-token-connection NAME` injects a workspace secret
+  for published gated models. Arbitrary private models are not imported.
+- `foundry` uses a current Foundry AIServices account and managed compute (preview).
+  Run `hf cloud foundry catalog MODEL_ID` to discover the published templates.
+  Deploy resolves the Hub ID and publisher defaults automatically. If ambiguous,
+  choose `--template NAME` and `--accelerator-type` from the published options.
+  Explicit asset references and profiles remain available as advanced inputs.
+
+Azure ML group options (`--subscription-id`, `--resource-group`, `--workspace`)
+and Foundry group options (`--subscription-id`, `--resource-group`, `--account`)
+go before the subcommand. Catalog discovery needs Azure login even with
+`--dry-run`; no cloud resources are created. Explicit Foundry profiles can be
+previewed offline. The catalogs and quota pools differ; never silently switch
+between them. Check quotas and delete unused or failed endpoints.
+
+Root estimates verify Azure ML/Foundry model publication before ranking. Unknown
+checks (login/network/service errors) and unavailable models are excluded, with
+reasons shown; other providers can still be estimated. Checks run concurrently
+with a 15-second deadline, with no persistent negative cache. Foundry automatically
+discovers published template GPU layouts and machine-readable context caps, then
+multiplies the GPU count by bundled Global per-accelerator rates. Rates are sourced
+2026-11-13 public USD pricing-page estimates (including H200 at $9.10/GPU-hour),
+not live quotes. Unknown rates remain unpriced; unknown
+GPU/context layouts are skipped. Profiles are optional template/pricing overrides
+and must match a published model version and active allowed template/GPU layout. Azure ML
+hints pin the verified catalog version. Catalog availability is separate from
+runtime workload compatibility, SKU support, capacity and quota. Never substitute
+Azure VM prices for Foundry managed compute.
+
+`deploy --print-code` prints plain standalone SDK Python; generation creates no
+resources or local deployment state and skips SDK version checks. SageMaker/Vertex
+may read Hub task metadata. Microsoft providers require scope settings and may
+read the catalog to pin model/template versions; complete Foundry profiles work
+offline. Never embed tokens in generated code: scripts use HF_TOKEN or cached HF
+login at runtime. Microsoft secret connections remain references. Review SDK
+packages/authentication and execute the script separately to deploy. These scripts
+do not register local HF Cloud state or reproduce every CLI preflight check.
+Do not combine --print-code with --dry-run or Azure ML --export-dir.
+
+Cost projections use `--hours` and `--instance-count`, assuming constant replicas.
+Rates already include every GPU in an instance; do not multiply GPU count twice.
+Vertex prices are the 2026-11-17 us-central1 public USD on-demand online-prediction
+snapshot. G2/A2/A3 Mega/A3 Ultra use published node rates; A3 High uses the sum of
+published prediction CPU/RAM/H100 rates and documented machine specifications.
+These are full-node estimates, excluding storage/network, Spot and discounts.
+Foundry profiles accept either a sourced `pricePerAcceleratorHourUsd` (converted
+using the template GPU count) or `pricePerInstanceHourUsd`, not both. These are
+compute estimates, excluding storage/network/other charges, and `--hours` does not
+schedule cleanup. Cost tables appear before a compact Provider availability table
+for every selected provider. SageMaker/Vertex show Runtime unverified: their Hub
+deployment path does not require a catalog entry, but model/runtime compatibility
+has not been established. Microsoft statuses reflect catalog publication, not
+guaranteed runtime startup, capacity or quota. Unsupported deployment selections
+remain useful for memory estimates but are labeled Selection unsupported.
+JSON adds providerAvailability while preserving Microsoft catalogAvailability. Add
+`--verbose` for full check explanations and pricing provenance; JSON retains all
+details and projected costs.
 
 Tip: if you use standalone installation, replace `hf cloud` with `hf-cloud`.
 """

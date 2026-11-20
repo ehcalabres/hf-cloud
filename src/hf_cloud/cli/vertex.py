@@ -1,17 +1,23 @@
-
 """Google Cloud Vertex AI CLI commands."""
 
-from contextlib import nullcontext
+from pathlib import Path
 from typing import Annotated, Optional
 
 import typer
 from rich.console import Console
 from rich.table import Table
 
+from hf_cloud.cli.deploy_code import vertex_code
+from hf_cloud.cli.deployment_selection import announce_selection, choose_instance
+from hf_cloud.cli.environment import deployment_environment
+from hf_cloud.cli.estimate import provider_estimate
 from hf_cloud.core.config import Config
-from hf_cloud.core.exceptions import DeploymentNotFoundError, ProviderError
+from hf_cloud.core.exceptions import DeploymentNotFoundError, HFCloudError, ProviderError
 from hf_cloud.core.state import StateManager
 from hf_cloud.providers.registry import ProviderRegistry
+from hf_cloud.utils.hf_hub import get_model_task
+from hf_cloud.utils.hf_mem import load_instance_data
+from hf_cloud.utils.sdk_versions import SdkUpdateCheck
 
 console = Console()
 vertex_app = typer.Typer(help="Google Cloud Vertex AI deployment management.")
@@ -24,7 +30,6 @@ def _get_provider_defaults() -> dict[str, Optional[str]]:
     return {
         "project": provider_config.get("default_project"),
         "location": provider_config.get("default_location"),
-        "machine_type": provider_config.get("default_machine_type"),
     }
 
 
@@ -35,12 +40,15 @@ def deploy(
     ],
     deployment_name: Annotated[str, typer.Option("--name", "-n", help="Name for the deployment/endpoint")],
     machine_type: Annotated[
-        Optional[str], typer.Option("--machine-type", "-m", help="vertex machine type (e.g., 'n1-standard-4')")
+        Optional[str],
+        typer.Option("--machine-type", "-m", help="Machine type; omitted selects cheapest compatible estimate"),
     ] = None,
     accelerator_type: Annotated[
         Optional[str], typer.Option("--accelerator-type", "-a", help="GPU type (e.g., 'NVIDIA_TESLA_T4')")
     ] = None,
-    accelerator_count: Annotated[int, typer.Option("--accelerator-count", help="Number of GPUs")] = 1,
+    accelerator_count: Annotated[
+        Optional[int], typer.Option("--accelerator-count", min=1, help="GPUs per replica")
+    ] = None,
     location: Annotated[Optional[str], typer.Option("--location", "-l", help="vertex location/region")] = None,
     project: Annotated[Optional[str], typer.Option("--project", "-p", help="vertex project ID")] = None,
     token: Annotated[
@@ -48,17 +56,77 @@ def deploy(
     ] = None,
     min_replicas: Annotated[int, typer.Option("--min-replicas", help="Minimum number of replicas")] = 1,
     max_replicas: Annotated[int, typer.Option("--max-replicas", help="Maximum number of replicas")] = 1,
+    print_code: Annotated[
+        bool, typer.Option("--print-code", help="Print standalone Python SDK code without deploying")
+    ] = False,
+    env: Annotated[
+        Optional[list[str]], typer.Option("--env", help="Runtime KEY=VALUE; repeat to override defaults/files")
+    ] = None,
+    env_file: Annotated[
+        Optional[list[Path]], typer.Option("--env-file", help="UTF-8 KEY=VALUE file; repeat in merge order")
+    ] = None,
 ) -> None:
     """Deploy a HuggingFace model to Google Cloud Vertex AI."""
+    custom_env = deployment_environment(env, env_file)
     # Load provider configuration defaults
     defaults = _get_provider_defaults()
 
-    # Use provided values or fall back to config defaults, then hardcoded defaults
+    # Account defaults remain configured; hardware is selected per model below.
     effective_location = location or defaults.get("location") or "us-central1"
     effective_project = project or defaults.get("project")
-    effective_machine_type = machine_type or defaults.get("machine_type") or "n1-standard-4"
+    if min_replicas < 1 or max_replicas < min_replicas:
+        raise typer.BadParameter("Use positive replica counts and max-replicas >= min-replicas")
+    effective_machine_type = machine_type
+    if effective_machine_type is None:
+        typer.echo("Estimating compatible Vertex AI instances...", err=True)
+        try:
+            match = choose_instance(
+                model_id,
+                "vertex",
+                token=token,
+                accelerator_type=accelerator_type,
+                accelerator_count=accelerator_count,
+            )
+        except HFCloudError as error:
+            typer.echo(
+                f"Error selecting an instance: {error}. Use --machine-type to select explicitly.", err=True
+            )
+            raise typer.Exit(code=1) from error
+        announce_selection(match)
+        hardware = match.instance
+        effective_machine_type = hardware["instanceType"]
+    else:
+        hardware = next(
+            (item for item in load_instance_data("vertex").instances if item["instanceType"] == machine_type),
+            {},
+        )
+    accelerator_type = accelerator_type or hardware.get("acceleratorType")
+    accelerator_count = accelerator_count if accelerator_count is not None else hardware.get("numGpu", 1)
+
+    if print_code:
+        if min_replicas < 1 or max_replicas < min_replicas or (accelerator_type and accelerator_count < 1):
+            raise typer.BadParameter("Use positive replica/GPU counts and max-replicas >= min-replicas")
+        typer.echo(
+            vertex_code(
+                model_id,
+                deployment_name,
+                {
+                    "machine_type": effective_machine_type,
+                    "accelerator_type": accelerator_type,
+                    "accelerator_count": accelerator_count,
+                    "location": effective_location,
+                    "project": effective_project,
+                    "min_replica_count": min_replicas,
+                    "max_replica_count": max_replicas,
+                    "environment_variables": custom_env,
+                },
+                get_model_task(model_id, token),
+            )
+        )
+        return
 
     console.print(f"[bold blue]Deploying {model_id} to Google Cloud Vertex AI...[/bold blue]")
+    update_check = SdkUpdateCheck("vertex")
 
     try:
         provider = ProviderRegistry.get_provider("vertex")
@@ -71,6 +139,7 @@ def deploy(
             "project": effective_project,
             "min_replica_count": min_replicas,
             "max_replica_count": max_replicas,
+            "environment_variables": custom_env,
         }
 
         deployment = provider.deploy(
@@ -103,6 +172,8 @@ def deploy(
     except Exception as e:
         console.print(f"[bold red]Deployment failed:[/bold red] {e}")
         raise typer.Exit(code=1)
+    finally:
+        update_check.notify(console)
 
 
 @vertex_app.command(name="ls")
@@ -302,172 +373,5 @@ def invoke(
         raise typer.Exit(code=1)
 
 
-@vertex_app.command(name="estimate")
-def estimate(
-    model_id: Annotated[
-        str, typer.Argument(help="HuggingFace model ID (e.g., 'gpt2', 'meta-llama/Llama-2-7b-hf')")
-    ],
-    safety_margin: Annotated[
-        Optional[float],
-        typer.Option("--safety-margin", "-s", help="Fraction of VRAM to keep free (e.g., 0.1 for 10%)"),
-    ] = None,
-    show_all: Annotated[
-        bool, typer.Option("--all", "-a", help="Show all compatible instances")
-    ] = False,
-    json_output: Annotated[bool, typer.Option("--json", "-j", help="Output results as JSON")] = False,
-) -> None:
-    """Estimate the minimum viable Vertex AI instance for a model.
-
-    Uses hf-mem to calculate VRAM requirements and matches against
-    available Vertex AI machine types and accelerators.
-    """
-    import json
-
-    from hf_cloud.utils.hf_mem import (
-        HfMemError,
-        _get_total_vram,
-        find_compatible_instances,
-        find_minimum_instance,
-        load_instance_data,
-        run_hf_mem,
-    )
-
-    def _build_instance_output(inst: dict, required_vram: float) -> dict:
-        """Build output dict for an instance."""
-        total_vram = _get_total_vram(inst)
-        usage_pct = (required_vram / total_vram) * 100 if total_vram > 0 else 0
-        vram_left = total_vram - required_vram
-        return {
-            "instanceType": inst.get("instanceType"),
-            "acceleratorType": inst.get("acceleratorType"),
-            "numGpu": inst.get("numGpu"),
-            "gpuMemGbPerGpu": inst.get("gpuMemGbPerGpu"),
-            "totalVramGb": total_vram,
-            "usagePercent": round(usage_pct, 1),
-            "vramLeftGb": round(vram_left, 1),
-            "pricePerHourUsd": inst.get("pricePerHourUsd"),
-        }
-
-    try:
-        if not json_output:
-            console.print(f"[bold blue]Estimating instance for {model_id}...[/bold blue]")
-
-        # Run hf-mem estimation
-        with console.status("Running hf-mem estimation...") if not json_output else nullcontext():
-            estimate_result = run_hf_mem(model_id)
-
-        # Load instance data
-        instance_data = load_instance_data("vertex")
-        effective_margin = safety_margin if safety_margin is not None else instance_data.safety_margin_default
-
-        if not json_output:
-            console.print(f"  [cyan]Model:[/cyan] {model_id}")
-            console.print(f"  [cyan]Required VRAM:[/cyan] {estimate_result.required_vram_gb:.2f} GB")
-            console.print(f"  [cyan]Safety margin:[/cyan] {int(effective_margin * 100)}%")
-            console.print()
-
-        if show_all:
-            # Show all compatible instances
-            compatible = find_compatible_instances(
-                estimate_result.required_vram_gb, instance_data.instances, effective_margin
-            )
-
-            if not compatible:
-                if json_output:
-                    print(json.dumps({"error": "No compatible instances found", "instances": []}))
-                else:
-                    console.print("[bold red]No compatible instances found.[/bold red]")
-                raise typer.Exit(code=1)
-
-            if json_output:
-                output = {
-                    "modelId": model_id,
-                    "requiredVramGb": round(estimate_result.required_vram_gb, 2),
-                    "safetyMargin": effective_margin,
-                    "instances": [
-                        _build_instance_output(inst, estimate_result.required_vram_gb)
-                        for inst in compatible
-                    ],
-                }
-                print(json.dumps(output, indent=2))
-            else:
-                table = Table(title="Compatible Vertex AI Instances")
-                table.add_column("Machine Type", style="cyan")
-                table.add_column("Accelerator", style="green")
-                table.add_column("GPUs", justify="right")
-                table.add_column("GPU Mem (GB)", justify="right")
-                table.add_column("Total VRAM (GB)", justify="right")
-                table.add_column("Usage %", justify="right")
-                table.add_column("VRAM Left (GB)", justify="right")
-                table.add_column("Price/Hour", justify="right")
-
-                for inst in compatible:
-                    total_vram = _get_total_vram(inst)
-                    usage_pct = (estimate_result.required_vram_gb / total_vram) * 100 if total_vram > 0 else 0
-                    vram_left = total_vram - estimate_result.required_vram_gb
-                    table.add_row(
-                        inst.get("instanceType", "N/A"),
-                        inst.get("acceleratorType", "N/A"),
-                        str(inst.get("numGpu", "N/A")),
-                        str(inst.get("gpuMemGbPerGpu", "N/A")),
-                        f"{total_vram:.0f}",
-                        f"{usage_pct:.1f}%",
-                        f"{vram_left:.1f}",
-                        f"${inst.get('pricePerHourUsd', 0):.2f}",
-                    )
-
-                console.print(table)
-        else:
-            # Show only minimum instance
-            minimum = find_minimum_instance(
-                estimate_result.required_vram_gb, instance_data.instances, effective_margin
-            )
-
-            if minimum is None:
-                if json_output:
-                    print(json.dumps({"error": "No suitable instance found", "instance": None}))
-                else:
-                    console.print("[bold red]No suitable instance found.[/bold red]")
-                    console.print("[dim]Model requires more VRAM than any available instance.[/dim]")
-                raise typer.Exit(code=1)
-
-            if json_output:
-                output = {
-                    "modelId": model_id,
-                    "requiredVramGb": round(estimate_result.required_vram_gb, 2),
-                    "safetyMargin": effective_margin,
-                    "instance": _build_instance_output(minimum, estimate_result.required_vram_gb),
-                }
-                print(json.dumps(output, indent=2))
-            else:
-                total_vram = _get_total_vram(minimum)
-                usage_pct = (estimate_result.required_vram_gb / total_vram) * 100 if total_vram > 0 else 0
-                vram_left = total_vram - estimate_result.required_vram_gb
-                console.print("[bold green]Recommended Instance:[/bold green]")
-                console.print(f"  [cyan]Machine Type:[/cyan] {minimum.get('instanceType')}")
-                console.print(f"  [cyan]Accelerator:[/cyan] {minimum.get('acceleratorType', 'N/A')}")
-                console.print(
-                    f"  [cyan]GPUs:[/cyan] {minimum.get('numGpu')}x {minimum.get('gpuMemGbPerGpu')} GB"
-                )
-                console.print(f"  [cyan]Total VRAM:[/cyan] {total_vram:.0f} GB")
-                console.print(f"  [cyan]Usage:[/cyan] {usage_pct:.1f}% ({vram_left:.1f} GB left)")
-                console.print(f"  [cyan]Price/Hour:[/cyan] ${minimum.get('pricePerHourUsd', 0):.2f}")
-                console.print()
-
-                # Build deploy command
-                accel_type = minimum.get("acceleratorType", "")
-                accel_flag = f" --accelerator-type {accel_type}" if accel_type else ""
-                console.print("[dim]Deploy with:[/dim]")
-                console.print(
-                    f"[dim]  hf-cloud vertex deploy {model_id} --name <name> "
-                    f"--machine-type {minimum.get('instanceType')}{accel_flag}[/dim]"
-                )
-
-    except HfMemError as e:
-        if json_output:
-            print(json.dumps({"error": e.message, "details": e.details}))
-        else:
-            console.print(f"[bold red]Error:[/bold red] {e.message}")
-            if e.details:
-                console.print(f"[dim]{e.details}[/dim]")
-        raise typer.Exit(code=1)
+# Keep the provider spelling as a shortcut to the canonical estimate command.
+vertex_app.command(name="estimate")(provider_estimate("vertex"))

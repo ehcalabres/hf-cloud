@@ -1,0 +1,14 @@
+{
+  "scope": "GlobalManagedCompute",
+  "currency": "USD",
+  "unit": "accelerator-hour",
+  "last_updated": "2026-11-13",
+  "pricingSource": "https://azure.microsoft.com/en-us/pricing/details/ai-foundry-models/microsoft/",
+  "pricingBasis": "Global Managed Compute public USD rates independently verified on 2026-11-13 from the pricing page's embedded data-amount regional values and USD currency conversion of 1.0. The rendered-text reader omitted these values and showed placeholders. Bundled estimates, not live quotes. Excludes discounts, storage, networking and other charges. A rate alone does not establish model/hardware availability.",
+  "rates": {
+    "A100_80GB": 3.95,
+    "H100_80GB": 7.91,
+    "H200_141GB": 9.10,
+    "MI300_192GB": 7.91
+  }
+}

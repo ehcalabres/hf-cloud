@@ -1,7 +1,11 @@
 {
   "provider": "vertex",
-  "last_updated": "2025-01-01",
+  "last_updated": "2026-11-17",
   "safetyMarginDefault": 0.1,
+  "pricingRegion": "us-central1",
+  "pricingSource": "https://cloud.google.com/vertex-ai/pricing#prediction-and-explanation",
+  "pricingBasis": "Public USD on-demand online prediction prices for Iowa (us-central1), consumption model 7754-699E-0EBF. Full node-hour costs include CPUs, host RAM and all attached GPUs once. G2, A2, A3 Mega and A3 Ultra use the published prediction machine tables. A3 High entries sum published A3 prediction component rates with documented machine specifications; no direct prediction machine rows were listed. Excludes storage, networking, Spot, reservations, commitment discounts and other service charges. Memory-fit catalog, not a guarantee of deployment support, regional capacity or quota.",
+  "specificationSource": "https://cloud.google.com/vertex-ai/docs/predictions/configure-compute",
   "instances": [
     {
       "instanceType": "g2-standard-4",
@@ -9,7 +13,7 @@
       "numGpu": 1,
       "gpuMemGbPerGpu": 24,
       "startupTimeoutSeconds": 900,
-      "pricePerHourUsd": 0.7068
+      "pricePerHourUsd": 0.81293
     },
     {
       "instanceType": "g2-standard-8",
@@ -17,7 +21,7 @@
       "numGpu": 1,
       "gpuMemGbPerGpu": 24,
       "startupTimeoutSeconds": 900,
-      "pricePerHourUsd": 0.8536
+      "pricePerHourUsd": 0.98181
     },
     {
       "instanceType": "g2-standard-12",
@@ -25,7 +29,7 @@
       "numGpu": 1,
       "gpuMemGbPerGpu": 24,
       "startupTimeoutSeconds": 900,
-      "pricePerHourUsd": 1.0004
+      "pricePerHourUsd": 1.15069
     },
     {
       "instanceType": "g2-standard-16",
@@ -33,7 +37,7 @@
       "numGpu": 1,
       "gpuMemGbPerGpu": 24,
       "startupTimeoutSeconds": 900,
-      "pricePerHourUsd": 1.1472
+      "pricePerHourUsd": 1.31957
     },
     {
       "instanceType": "g2-standard-24",
@@ -41,7 +45,7 @@
       "numGpu": 2,
       "gpuMemGbPerGpu": 24,
       "startupTimeoutSeconds": 900,
-      "pricePerHourUsd": 2.0008
+      "pricePerHourUsd": 2.30138
     },
     {
       "instanceType": "g2-standard-32",
@@ -49,7 +53,7 @@
       "numGpu": 1,
       "gpuMemGbPerGpu": 24,
       "startupTimeoutSeconds": 900,
-      "pricePerHourUsd": 1.5876
+      "pricePerHourUsd": 1.99509
     },
     {
       "instanceType": "g2-standard-48",
@@ -57,7 +61,7 @@
       "numGpu": 4,
       "gpuMemGbPerGpu": 24,
       "startupTimeoutSeconds": 900,
-      "pricePerHourUsd": 4.0017
+      "pricePerHourUsd": 4.60276
     },
     {
       "instanceType": "g2-standard-96",
@@ -65,7 +69,7 @@
       "numGpu": 8,
       "gpuMemGbPerGpu": 24,
       "startupTimeoutSeconds": 900,
-      "pricePerHourUsd": 8.0033
+      "pricePerHourUsd": 9.20552
     },
     {
       "instanceType": "a2-highgpu-1g",
@@ -73,7 +77,7 @@
       "numGpu": 1,
       "gpuMemGbPerGpu": 40,
       "startupTimeoutSeconds": 900,
-      "pricePerHourUsd": 3.6734
+      "pricePerHourUsd": 4.2244949
     },
     {
       "instanceType": "a2-highgpu-2g",
@@ -81,7 +85,7 @@
       "numGpu": 2,
       "gpuMemGbPerGpu": 40,
       "startupTimeoutSeconds": 900,
-      "pricePerHourUsd": 7.3468
+      "pricePerHourUsd": 8.4489898
     },
     {
       "instanceType": "a2-highgpu-4g",
@@ -89,7 +93,7 @@
       "numGpu": 4,
       "gpuMemGbPerGpu": 40,
       "startupTimeoutSeconds": 900,
-      "pricePerHourUsd": 14.6936
+      "pricePerHourUsd": 16.8979796
     },
     {
       "instanceType": "a2-highgpu-8g",
@@ -97,7 +101,7 @@
       "numGpu": 8,
       "gpuMemGbPerGpu": 40,
       "startupTimeoutSeconds": 900,
-      "pricePerHourUsd": 29.3871
+      "pricePerHourUsd": 33.7959592
     },
     {
       "instanceType": "a2-megagpu-16g",
@@ -105,7 +109,7 @@
       "numGpu": 16,
       "gpuMemGbPerGpu": 40,
       "startupTimeoutSeconds": 900,
-      "pricePerHourUsd": 58.7742
+      "pricePerHourUsd": 64.1020592
     },
     {
       "instanceType": "a2-ultragpu-1g",
@@ -113,7 +117,7 @@
       "numGpu": 1,
       "gpuMemGbPerGpu": 80,
       "startupTimeoutSeconds": 900,
-      "pricePerHourUsd": 5.0578
+      "pricePerHourUsd": 5.7818474
     },
     {
       "instanceType": "a2-ultragpu-2g",
@@ -121,7 +125,7 @@
       "numGpu": 2,
       "gpuMemGbPerGpu": 80,
       "startupTimeoutSeconds": 900,
-      "pricePerHourUsd": 10.1156
+      "pricePerHourUsd": 11.5636948
     },
     {
       "instanceType": "a2-ultragpu-4g",
@@ -129,7 +133,7 @@
       "numGpu": 4,
       "gpuMemGbPerGpu": 80,
       "startupTimeoutSeconds": 900,
-      "pricePerHourUsd": 20.2312
+      "pricePerHourUsd": 23.1273896
     },
     {
       "instanceType": "a2-ultragpu-8g",
@@ -137,7 +141,7 @@
       "numGpu": 8,
       "gpuMemGbPerGpu": 80,
       "startupTimeoutSeconds": 900,
-      "pricePerHourUsd": 40.5504
+      "pricePerHourUsd": 46.2547792
     },
     {
       "instanceType": "a3-highgpu-1g",
@@ -145,7 +149,15 @@
       "numGpu": 1,
       "gpuMemGbPerGpu": 80,
       "startupTimeoutSeconds": 900,
-      "pricePerHourUsd": 11.266
+      "pricePerHourUsd": 12.625919,
+      "pricingCalculation": {
+        "method": "prediction-component-rates",
+        "vCpuCount": 26,
+        "hostMemoryGiB": 234,
+        "vCpuPricePerHourUsd": 0.0293227,
+        "memoryPricePerGiBHourUsd": 0.0025534,
+        "gpuPricePerHourUsd": 11.2660332
+      }
     },
     {
       "instanceType": "a3-highgpu-2g",
@@ -153,7 +165,15 @@
       "numGpu": 2,
       "gpuMemGbPerGpu": 80,
       "startupTimeoutSeconds": 900,
-      "pricePerHourUsd": 21.8427
+      "pricePerHourUsd": 25.251838,
+      "pricingCalculation": {
+        "method": "prediction-component-rates",
+        "vCpuCount": 52,
+        "hostMemoryGiB": 468,
+        "vCpuPricePerHourUsd": 0.0293227,
+        "memoryPricePerGiBHourUsd": 0.0025534,
+        "gpuPricePerHourUsd": 11.2660332
+      }
     },
     {
       "instanceType": "a3-highgpu-4g",
@@ -161,7 +181,15 @@
       "numGpu": 4,
       "gpuMemGbPerGpu": 80,
       "startupTimeoutSeconds": 900,
-      "pricePerHourUsd": 43.9162
+      "pricePerHourUsd": 50.503676,
+      "pricingCalculation": {
+        "method": "prediction-component-rates",
+        "vCpuCount": 104,
+        "hostMemoryGiB": 936,
+        "vCpuPricePerHourUsd": 0.0293227,
+        "memoryPricePerGiBHourUsd": 0.0025534,
+        "gpuPricePerHourUsd": 11.2660332
+      }
     },
     {
       "instanceType": "a3-highgpu-8g",
@@ -169,7 +197,15 @@
       "numGpu": 8,
       "gpuMemGbPerGpu": 80,
       "startupTimeoutSeconds": 900,
-      "pricePerHourUsd": 101.0074
+      "pricePerHourUsd": 101.007352,
+      "pricingCalculation": {
+        "method": "prediction-component-rates",
+        "vCpuCount": 208,
+        "hostMemoryGiB": 1872,
+        "vCpuPricePerHourUsd": 0.0293227,
+        "memoryPricePerGiBHourUsd": 0.0025534,
+        "gpuPricePerHourUsd": 11.2660332
+      }
     },
     {
       "instanceType": "a3-megagpu-8g",
@@ -177,7 +213,7 @@
       "numGpu": 8,
       "gpuMemGbPerGpu": 80,
       "startupTimeoutSeconds": 900,
-      "pricePerHourUsd": 106.0464
+      "pricePerHourUsd": 106.65474
     },
     {
       "instanceType": "a3-ultragpu-8g",
@@ -185,7 +221,7 @@
       "numGpu": 8,
       "gpuMemGbPerGpu": 141,
       "startupTimeoutSeconds": 900,
-      "pricePerHourUsd": 99.7739
+      "pricePerHourUsd": 96.015616
     }
   ]
 }
